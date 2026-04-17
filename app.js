@@ -40,23 +40,28 @@ const phases = {
   },
   takeoff: {
     title: "離陸",
-    hint: "高度1.5mまで上昇し、3秒間ホバリングしてください。",
-    line: "離陸してください。高度を安定させてください。",
+    hint: "高度3.5mまで上昇し、5秒間ホバリングしてください。",
+    line: "離陸してください。高度3.5mでホバリングしてください。",
   },
-  move: {
-    title: "移動",
-    hint: "前方の停止位置へ移動し、姿勢と高度を保ってください。",
-    line: "前方の停止位置まで移動してください。",
+  square: {
+    title: "スクエア飛行",
+    hint: "指定リングを順番に通過し、機首を進行方向に向けてください。",
+    line: "スクエア飛行を開始してください。指定経路を維持してください。",
   },
   eight: {
-    title: "8の字",
-    hint: "2本の標識を回り、中央へ戻ってください。",
-    line: "8の字飛行を開始してください。",
+    title: "8の字飛行",
+    hint: "高度1.5mを保ち、2つの円を連続して飛行してください。",
+    line: "高度1.5mへ移行し、8の字飛行を開始してください。",
+  },
+  abnormal: {
+    title: "異常事態の飛行",
+    hint: "水平安定が弱い状態で、指定経路を機首前向きのまま側方移動してください。",
+    line: "GNSS・ビジョンOFFを想定します。指定点まで側方移動してください。",
   },
   landing: {
-    title: "着陸",
-    hint: "着陸地点へ戻り、流れを抑えて接地してください。",
-    line: "着陸地点へ移動し、着陸してください。",
+    title: "緊急着陸",
+    hint: "最短経路で緊急着陸地点へ移動し、流れを抑えて接地してください。",
+    line: "緊急着陸してください。最短経路で指定地点へ降下してください。",
   },
   result: {
     title: "結果",
@@ -65,7 +70,19 @@ const phases = {
   },
 };
 
-const phaseOrder = ["preflight", "takeoff", "move", "eight", "landing", "result"];
+const phaseOrder = ["preflight", "takeoff", "square", "eight", "abnormal", "landing", "result"];
+
+const squareTargets = [
+  { key: "squareA", x: 4.8, z: 8.5 },
+  { key: "squareB", x: -4.8, z: 8.5 },
+  { key: "squareC", x: -4.8, z: 0 },
+  { key: "squareD", x: 0, z: 0 },
+];
+
+const abnormalTargets = [
+  { key: "abnormalA", x: 0, z: 8.5 },
+  { key: "abnormalB", x: -5.4, z: 8.5 },
+];
 
 const state = {
   mode: "practice",
@@ -77,8 +94,10 @@ const state = {
   startTime: 0,
   elapsed: 0,
   hoverTimer: 0,
-  moveTimer: 0,
+  squareTimer: 0,
+  squareIndex: 0,
   eightProgress: 0,
+  abnormalIndex: 0,
   landingDrift: 0,
   maxAltitudeJitter: 0,
   responseDelays: [],
@@ -171,25 +190,27 @@ function buildTrainingField(THREE) {
   const redMat = new THREE.MeshStandardMaterial({ color: 0xef6f6c, roughness: 0.5 });
   const blueMat = new THREE.MeshStandardMaterial({ color: 0x4aa3df, roughness: 0.65 });
 
-  const runway = new THREE.Mesh(new THREE.PlaneGeometry(11, 23), padMat);
+  const runway = new THREE.Mesh(new THREE.PlaneGeometry(21, 13), padMat);
   runway.rotation.x = -Math.PI / 2;
-  runway.position.set(0, 0.012, 7.5);
+  runway.position.set(0, 0.012, 6.5);
   runway.receiveShadow = true;
   world.scene.add(runway);
 
-  for (let z = -2; z <= 18; z += 2) {
-    addLine(THREE, -5.5, z, 5.5, z, lineMat);
+  for (let z = 0; z <= 13; z += 2.6) {
+    addLine(THREE, -10.5, z, 10.5, z, lineMat);
   }
-  addLine(THREE, -5.5, -3, -5.5, 19, lineMat);
-  addLine(THREE, 5.5, -3, 5.5, 19, lineMat);
-  addLine(THREE, 0, -3, 0, 19, lineMat);
+  addLine(THREE, -10.5, 0, -10.5, 13, lineMat);
+  addLine(THREE, 10.5, 0, 10.5, 13, lineMat);
+  addLine(THREE, 0, 0, 0, 13, lineMat);
 
   addLandingPad(THREE, 0, 0, "着陸");
-  addTargetRing(THREE, 0, 8, 1.35, yellowMat, "move");
+  squareTargets.forEach((target) => addTargetRing(THREE, target.x, target.z, 0.8, yellowMat, target.key));
   addPole(THREE, -2.8, 10, redMat);
   addPole(THREE, 2.8, 10, redMat);
   addTargetRing(THREE, -2.8, 10, 1.25, redMat, "left");
   addTargetRing(THREE, 2.8, 10, 1.25, redMat, "right");
+  abnormalTargets.forEach((target) => addTargetRing(THREE, target.x, target.z, 0.9, blueMat, target.key));
+  addTargetRing(THREE, -5.4, 2.2, 1.1, redMat, "emergencyLanding");
 
   addGate(THREE, -6.5, 4.5, blueMat);
   addGate(THREE, 6.5, 12.5, blueMat);
@@ -427,10 +448,13 @@ function updateThreeWorld(dt) {
   world.shadow.material.opacity = clamp(0.28 - d.y * 0.045, 0.07, 0.28);
 
   Object.entries(world.targetRings).forEach(([key, ring]) => {
+    const currentSquare = squareTargets[state.squareIndex]?.key;
+    const currentAbnormal = abnormalTargets[state.abnormalIndex]?.key;
     const active =
-      (state.phase === "move" && key === "move") ||
+      (state.phase === "square" && key === currentSquare) ||
       (state.phase === "eight" && (key === "left" || key === "right")) ||
-      (state.phase === "landing" && key === "landing");
+      (state.phase === "abnormal" && key === currentAbnormal) ||
+      (state.phase === "landing" && key === "emergencyLanding");
     ring.scale.setScalar(active ? 1 + Math.sin(performance.now() / 180) * 0.04 : 1);
   });
 
@@ -501,8 +525,10 @@ function reset() {
   state.checklistMistakes = 0;
   state.elapsed = 0;
   state.hoverTimer = 0;
-  state.moveTimer = 0;
+  state.squareTimer = 0;
+  state.squareIndex = 0;
   state.eightProgress = 0;
+  state.abnormalIndex = 0;
   state.landingDrift = 0;
   state.maxAltitudeJitter = 0;
   state.responseDelays = [];
@@ -603,16 +629,22 @@ function updatePhysics(dt, input) {
     d.vy -= 0.55 * dt;
   }
 
-  d.vx *= Math.pow(0.86, dt * 8);
-  d.vz *= Math.pow(0.86, dt * 8);
+  const horizontalDamping = state.phase === "abnormal" || state.phase === "landing" ? 0.93 : 0.86;
+  d.vx *= Math.pow(horizontalDamping, dt * 8);
+  d.vz *= Math.pow(horizontalDamping, dt * 8);
   d.vy *= Math.pow(0.82, dt * 8);
 
-  d.x = clamp(d.x + d.vx * dt, -8, 8);
+  if (state.phase === "abnormal" || state.phase === "landing") {
+    d.vx += Math.sin(performance.now() / 900) * 0.18 * dt;
+    d.vz += Math.cos(performance.now() / 1100) * 0.12 * dt;
+  }
+
+  d.x = clamp(d.x + d.vx * dt, -10.5, 10.5);
   d.z = clamp(d.z + d.vz * dt, -2, 18);
   d.y = clamp(d.y + d.vy * dt, 0, 4);
   if (d.y === 0) d.vy = Math.max(0, d.vy);
 
-  const jitter = Math.abs(d.y - 1.5);
+  const jitter = Math.abs(d.y - targetAltitude());
   if (state.running && state.phase !== "landing") {
     state.maxAltitudeJitter = Math.max(state.maxAltitudeJitter, jitter);
   }
@@ -624,35 +656,59 @@ function updateMission(dt) {
   state.elapsed = (performance.now() - state.startTime) / 1000;
 
   if (state.phase === "takeoff") {
-    if (Math.abs(d.y - 1.5) < 0.22 && Math.hypot(d.vx, d.vz, d.vy) < 0.45) {
+    if (Math.abs(d.y - 3.5) < 0.22 && Math.hypot(d.vx, d.vz, d.vy) < 0.45) {
       state.hoverTimer += dt;
     } else {
       state.hoverTimer = Math.max(0, state.hoverTimer - dt);
     }
-    if (state.hoverTimer > 3) setPhase("move");
+    if (state.hoverTimer > 5) setPhase("square");
   }
 
-  if (state.phase === "move") {
-    const distance = Math.hypot(d.x - 0, d.z - 8);
-    if (distance < 0.8 && Math.abs(d.y - 1.5) < 0.35) {
-      state.moveTimer += dt;
+  if (state.phase === "square") {
+    const target = squareTargets[state.squareIndex];
+    const distance = target ? Math.hypot(d.x - target.x, d.z - target.z) : 0;
+    if (target && distance < 0.9 && Math.abs(d.y - 3.5) < 0.45) {
+      state.squareTimer += dt;
     } else {
-      state.moveTimer = Math.max(0, state.moveTimer - dt * 0.5);
+      state.squareTimer = Math.max(0, state.squareTimer - dt * 0.5);
     }
-    if (state.moveTimer > 2) setPhase("eight");
+    if (state.squareTimer > 0.8) {
+      state.squareIndex += 1;
+      state.squareTimer = 0;
+      if (state.squareIndex >= squareTargets.length) {
+        setPhase("eight");
+      } else {
+        ui.examiner.textContent = `次のスクエア地点へ移動してください。${state.squareIndex + 1}/${squareTargets.length}`;
+      }
+    }
   }
 
   if (state.phase === "eight") {
     const left = Math.hypot(d.x + 2.8, d.z - 10);
     const right = Math.hypot(d.x - 2.8, d.z - 10);
-    if (state.eightProgress === 0 && left < 1.3) state.eightProgress = 1;
-    if (state.eightProgress === 1 && right < 1.3) state.eightProgress = 2;
-    if (state.eightProgress === 2 && Math.hypot(d.x, d.z - 8) < 1.1) setPhase("landing");
+    if (Math.abs(d.y - 1.5) < 0.45) {
+      if (state.eightProgress === 0 && left < 1.3) state.eightProgress = 1;
+      if (state.eightProgress === 1 && right < 1.3) state.eightProgress = 2;
+      if (state.eightProgress === 2 && Math.hypot(d.x, d.z - 8) < 1.1) setPhase("abnormal");
+    }
+  }
+
+  if (state.phase === "abnormal") {
+    const target = abnormalTargets[state.abnormalIndex];
+    const distance = target ? Math.hypot(d.x - target.x, d.z - target.z) : 0;
+    if (target && distance < 0.9 && Math.abs(d.y - 3.5) < 0.55) {
+      state.abnormalIndex += 1;
+      if (state.abnormalIndex >= abnormalTargets.length) {
+        setPhase("landing");
+      } else {
+        ui.examiner.textContent = "機首前向きのまま、次の側方移動点へ進んでください。";
+      }
+    }
   }
 
   if (state.phase === "landing") {
     state.landingDrift = Math.max(state.landingDrift, Math.hypot(d.vx, d.vz));
-    if (Math.hypot(d.x, d.z) < 0.8 && d.y < 0.08 && Math.hypot(d.vx, d.vz) < 0.55) {
+    if (Math.hypot(d.x + 5.4, d.z - 2.2) < 0.9 && d.y < 0.08 && Math.hypot(d.vx, d.vz) < 0.55) {
       finishExam();
     }
   }
@@ -671,6 +727,14 @@ function finishExam() {
   if (state.maxAltitudeJitter > 0.65) {
     score -= 16;
     feedback.push("高度維持が不安定です。水平移動時のスロットル補正を小さく早めに入れてください。");
+  }
+  if (state.squareIndex < squareTargets.length) {
+    score -= 14;
+    feedback.push("スクエア飛行の指定経路を完了できていません。次のリングを見失わないよう、進行方向と高度を保ってください。");
+  }
+  if (state.abnormalIndex < abnormalTargets.length) {
+    score -= 14;
+    feedback.push("異常事態の飛行で指定側方移動を完了できていません。安定機能が弱い状態での惰性を早めに抑えてください。");
   }
   if (state.landingDrift > 0.9) {
     score -= 18;
@@ -735,6 +799,13 @@ function formatTime(seconds) {
   const min = String(Math.floor(whole / 60)).padStart(2, "0");
   const sec = String(whole % 60).padStart(2, "0");
   return `${min}:${sec}`;
+}
+
+function targetAltitude() {
+  if (state.phase === "eight") return 1.5;
+  if (state.phase === "landing") return 0;
+  if (state.phase === "preflight" || state.phase === "result") return state.drone.y;
+  return 3.5;
 }
 
 ui.modeButtons.forEach((button) => {
