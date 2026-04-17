@@ -237,6 +237,19 @@ select {
   color: var(--muted);
 }
 
+.ghost-button.active {
+  border-color: rgba(88, 196, 143, 0.75);
+  background: rgba(88, 196, 143, 0.13);
+  color: var(--text);
+}
+
+.keyboard-help {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .checklist,
 .mission-list,
 #feedbackList {

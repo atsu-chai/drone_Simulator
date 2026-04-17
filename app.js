@@ -14,7 +14,7 @@ const ui = {
   reset: document.getElementById("resetButton"),
   preset: document.getElementById("presetSelect"),
   controller: document.getElementById("controllerStatus"),
-  keyboardDemo: document.getElementById("keyboardDemoButton"),
+  developerMode: document.getElementById("developerModeButton"),
   missions: [...document.querySelectorAll("#missionList li")],
   resultPanel: document.getElementById("resultPanel"),
   passFail: document.getElementById("passFail"),
@@ -70,7 +70,7 @@ const state = {
   mode: "practice",
   phase: "preflight",
   running: false,
-  keyboardDemo: false,
+  developerMode: true,
   checklistIndex: 0,
   checklistMistakes: 0,
   startTime: 0,
@@ -177,7 +177,7 @@ function startExam() {
     return;
   }
   if (!state.inputReady) {
-    ui.examiner.textContent = "外部コントローラーを接続してください。プロトタイプ確認時のみキーボード入力を利用できます。";
+    ui.examiner.textContent = "外部コントローラーを接続してください。開発者モードではキーボード操作で開始できます。";
     return;
   }
   state.running = true;
@@ -195,12 +195,12 @@ function getGamepad() {
 
 function updateControllerStatus() {
   const pad = getGamepad();
-  state.inputReady = Boolean(pad || state.keyboardDemo);
+  state.inputReady = Boolean(pad || state.developerMode);
   if (pad) {
     ui.controller.textContent = `接続中: ${pad.id}`;
     ui.controller.classList.add("ready");
-  } else if (state.keyboardDemo) {
-    ui.controller.textContent = "プロトタイプ用キーボード入力";
+  } else if (state.developerMode) {
+    ui.controller.textContent = "開発者モード: キーボード操作";
     ui.controller.classList.add("ready");
   } else {
     ui.controller.textContent = "外部コントローラー未接続";
@@ -226,7 +226,7 @@ function readInput() {
       input.yaw = axes[0] || 0;
     }
   }
-  if (state.keyboardDemo) {
+  if (state.developerMode) {
     input.throttle += (state.keys.has("KeyE") ? 1 : 0) - (state.keys.has("KeyQ") ? 1 : 0);
     input.forward += (state.keys.has("KeyW") ? 1 : 0) - (state.keys.has("KeyS") ? 1 : 0);
     input.strafe += (state.keys.has("KeyD") ? 1 : 0) - (state.keys.has("KeyA") ? 1 : 0);
@@ -549,13 +549,19 @@ ui.modeButtons.forEach((button) => {
 });
 ui.start.addEventListener("click", startExam);
 ui.reset.addEventListener("click", reset);
-ui.keyboardDemo.addEventListener("click", () => {
-  state.keyboardDemo = !state.keyboardDemo;
-  ui.keyboardDemo.textContent = state.keyboardDemo
-    ? "キーボード入力を停止"
-    : "プロトタイプ用キーボード入力を使う";
+ui.developerMode.addEventListener("click", () => {
+  state.developerMode = !state.developerMode;
+  ui.developerMode.classList.toggle("active", state.developerMode);
+  ui.developerMode.textContent = state.developerMode
+    ? "開発者モード: キーボード操作 ON"
+    : "開発者モード: キーボード操作 OFF";
 });
-window.addEventListener("keydown", (event) => state.keys.add(event.code));
+window.addEventListener("keydown", (event) => {
+  if (["KeyW", "KeyA", "KeyS", "KeyD", "KeyE", "KeyQ", "ArrowLeft", "ArrowRight"].includes(event.code)) {
+    event.preventDefault();
+  }
+  state.keys.add(event.code);
+});
 window.addEventListener("keyup", (event) => state.keys.delete(event.code));
 window.addEventListener("gamepadconnected", updateControllerStatus);
 window.addEventListener("gamepaddisconnected", updateControllerStatus);
