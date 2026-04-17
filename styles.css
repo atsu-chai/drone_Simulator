@@ -1,0 +1,388 @@
+:root {
+  color-scheme: dark;
+  --bg: #151817;
+  --panel: #202521;
+  --panel-2: #293128;
+  --text: #f2f4ee;
+  --muted: #b9c0b4;
+  --line: #465045;
+  --accent: #58c48f;
+  --accent-2: #f2c94c;
+  --danger: #ef6f6c;
+  --sky: #7aa8b6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+select {
+  font: inherit;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  height: 100vh;
+  min-height: 560px;
+  overflow: hidden;
+}
+
+.sim-stage {
+  position: relative;
+  min-width: 0;
+  background: #79a6b5;
+}
+
+#simCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hud {
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(18, 22, 19, 0.74);
+  backdrop-filter: blur(8px);
+  color: var(--text);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+}
+
+.top-left {
+  top: 18px;
+  left: 18px;
+  display: grid;
+  gap: 5px;
+  width: min(420px, calc(100% - 36px));
+  padding: 14px 16px;
+}
+
+.top-left span {
+  width: fit-content;
+  border-radius: 8px;
+  background: rgba(88, 196, 143, 0.18);
+  color: #a9e5c6;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.top-left strong {
+  font-size: 22px;
+}
+
+.top-left small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.top-right {
+  top: 18px;
+  right: 18px;
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+  white-space: nowrap;
+}
+
+.top-right span {
+  color: var(--muted);
+}
+
+.top-right strong {
+  color: var(--text);
+}
+
+.bottom-center {
+  left: 50%;
+  bottom: 18px;
+  width: min(680px, calc(100% - 36px));
+  transform: translateX(-50%);
+  padding: 14px 16px;
+  text-align: center;
+  line-height: 1.55;
+}
+
+.control-panel {
+  height: 100vh;
+  overflow: auto;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  padding: 22px;
+}
+
+.control-panel header {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.product-mark {
+  width: 54px;
+  height: 54px;
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  margin-bottom: 10px;
+  font-size: 26px;
+  line-height: 1.18;
+}
+
+h2 {
+  margin-bottom: 12px;
+  font-size: 16px;
+}
+
+.notice {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.panel-section {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.segmented button,
+.ghost-button,
+.primary-button,
+.secondary-button {
+  min-height: 42px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.segmented button {
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+.segmented button.active {
+  border-color: rgba(88, 196, 143, 0.75);
+  background: rgba(88, 196, 143, 0.17);
+  color: var(--text);
+}
+
+.select-label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #151817;
+  color: var(--text);
+  padding: 0 10px;
+}
+
+.controller-status {
+  margin-top: 12px;
+  border-radius: 8px;
+  background: #151817;
+  color: var(--accent-2);
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.controller-status.ready {
+  color: var(--accent);
+}
+
+.ghost-button {
+  width: 100%;
+  margin-top: 10px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.checklist,
+.mission-list,
+#feedbackList {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.checklist {
+  display: grid;
+  gap: 8px;
+}
+
+.checklist button {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #151817;
+  color: var(--text);
+  padding: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.checklist li.done button {
+  border-color: rgba(88, 196, 143, 0.7);
+  color: #bcebd2;
+}
+
+.checklist li.locked button {
+  color: #7d857b;
+}
+
+.mission-list {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.mission-list li {
+  padding-left: 4px;
+}
+
+.mission-list li.current {
+  color: var(--accent-2);
+  font-weight: 700;
+}
+
+.mission-list li.done {
+  color: var(--accent);
+}
+
+.primary-button,
+.secondary-button {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.primary-button {
+  border-color: transparent;
+  background: var(--accent);
+  color: #07120d;
+  font-weight: 800;
+}
+
+.primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.secondary-button {
+  background: transparent;
+  color: var(--text);
+}
+
+.result-panel dl {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.result-panel dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 8px;
+  background: #151817;
+  padding: 9px 10px;
+}
+
+.result-panel dt {
+  color: var(--muted);
+}
+
+.result-panel dd {
+  margin: 0;
+  font-weight: 800;
+}
+
+#feedbackList {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.orientation-warning {
+  display: none;
+}
+
+@media (max-width: 920px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .control-panel {
+    height: 42vh;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .top-right {
+    left: 18px;
+    right: auto;
+    top: auto;
+    bottom: 82px;
+  }
+}
+
+@media (orientation: portrait) {
+  .orientation-warning {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: grid;
+    place-content: center;
+    gap: 10px;
+    background: var(--bg);
+    padding: 28px;
+    text-align: center;
+  }
+
+  .orientation-warning strong {
+    font-size: 22px;
+  }
+
+  .orientation-warning span {
+    color: var(--muted);
+    line-height: 1.6;
+  }
+}

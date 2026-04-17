@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ドローン国家資格 実地試験対策シミュレーター</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="orientation-warning">
+      <strong>横画面で利用してください。</strong>
+      <span>実地試験の距離感を保つため、横向き表示に固定しています。</span>
+    </div>
+
+    <main class="app-shell">
+      <section class="sim-stage" aria-label="飛行訓練画面">
+        <canvas id="simCanvas" width="1280" height="720"></canvas>
+        <div class="hud top-left">
+          <span id="modeBadge">練習モード</span>
+          <strong id="phaseTitle">飛行前点検</strong>
+          <small id="phaseHint">点検項目を正しい順序で進めてください。</small>
+        </div>
+        <div class="hud top-right">
+          <span>高度 <strong id="altitudeReadout">0.0m</strong></span>
+          <span>速度 <strong id="speedReadout">0.0m/s</strong></span>
+          <span>経過 <strong id="timeReadout">00:00</strong></span>
+        </div>
+        <div class="hud bottom-center" id="examinerLine">
+          飛行前点検を開始してください。
+        </div>
+      </section>
+
+      <aside class="control-panel" aria-label="操作パネル">
+        <header>
+          <img class="product-mark" src="assets/drone.svg" alt="ドローン訓練シミュレーター" />
+          <p class="eyebrow">二等無人航空機操縦士</p>
+          <h1>実地試験プロトタイプ</h1>
+          <p class="notice">
+            正式な講習、試験免除、認定を提供するものではありません。最新の制度と実施要領を確認してください。
+          </p>
+        </header>
+
+        <section class="panel-section">
+          <h2>試験設定</h2>
+          <div class="segmented" role="group" aria-label="モード選択">
+            <button class="active" data-mode="practice">練習</button>
+            <button data-mode="exam">本番</button>
+          </div>
+          <label class="select-label">
+            コントローラー
+            <select id="presetSelect">
+              <option value="standard">標準: 左上下=高度 / 右=水平移動</option>
+              <option value="mode2">Mode 2: 左=高度・旋回 / 右=前後左右</option>
+              <option value="xbox">Xbox系</option>
+              <option value="playstation">PlayStation系</option>
+            </select>
+          </label>
+          <div class="controller-status" id="controllerStatus">
+            外部コントローラー未接続
+          </div>
+          <button id="keyboardDemoButton" class="ghost-button">
+            プロトタイプ用キーボード入力を使う
+          </button>
+        </section>
+
+        <section class="panel-section" id="checklistPanel">
+          <h2>飛行前点検</h2>
+          <ol class="checklist" id="checklist"></ol>
+        </section>
+
+        <section class="panel-section">
+          <h2>進行</h2>
+          <ol class="mission-list" id="missionList">
+            <li data-phase="preflight" class="current">飛行前点検</li>
+            <li data-phase="takeoff">離陸</li>
+            <li data-phase="move">移動</li>
+            <li data-phase="eight">8の字</li>
+            <li data-phase="landing">着陸</li>
+            <li data-phase="result">結果</li>
+          </ol>
+          <button id="startButton" class="primary-button">試験を開始</button>
+          <button id="resetButton" class="secondary-button">リセット</button>
+        </section>
+
+        <section class="panel-section result-panel" id="resultPanel" hidden>
+          <h2>結果</h2>
+          <dl>
+            <div><dt>判定</dt><dd id="passFail">-</dd></div>
+            <div><dt>スコア</dt><dd id="scoreValue">-</dd></div>
+            <div><dt>所要時間</dt><dd id="finalTime">-</dd></div>
+          </dl>
+          <ul id="feedbackList"></ul>
+        </section>
+      </aside>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
