@@ -1,5 +1,4 @@
 const canvas = document.getElementById("simCanvas");
-const ctx = canvas.getContext("2d");
 
 const ui = {
   modeBadge: document.getElementById("modeBadge"),
@@ -66,6 +65,8 @@ const phases = {
   },
 };
 
+const phaseOrder = ["preflight", "takeoff", "move", "eight", "landing", "result"];
+
 const state = {
   mode: "practice",
   phase: "preflight",
@@ -75,7 +76,6 @@ const state = {
   checklistMistakes: 0,
   startTime: 0,
   elapsed: 0,
-  phaseStart: 0,
   hoverTimer: 0,
   moveTimer: 0,
   eightProgress: 0,
@@ -94,7 +94,353 @@ const state = {
   },
   keys: new Set(),
   inputReady: false,
+  threeReady: false,
 };
+
+const world = {
+  renderer: null,
+  scene: null,
+  camera: null,
+  drone: null,
+  shadow: null,
+  propellers: [],
+  targetRings: {},
+  warning: null,
+  clock: null,
+};
+
+function initThreeWorld() {
+  if (!window.THREE) {
+    showThreeError();
+    return false;
+  }
+
+  const THREE = window.THREE;
+  world.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+  world.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  world.renderer.shadowMap.enabled = true;
+  world.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  world.scene = new THREE.Scene();
+  world.scene.background = new THREE.Color(0x8fbfd0);
+  world.scene.fog = new THREE.Fog(0x8fbfd0, 28, 78);
+
+  world.camera = new THREE.PerspectiveCamera(54, 1, 0.1, 120);
+  world.clock = new THREE.Clock();
+
+  const hemi = new THREE.HemisphereLight(0xd8f0ff, 0x4b5942, 1.7);
+  world.scene.add(hemi);
+
+  const sun = new THREE.DirectionalLight(0xfff0cd, 2.2);
+  sun.position.set(-18, 28, 14);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.left = -36;
+  sun.shadow.camera.right = 36;
+  sun.shadow.camera.top = 36;
+  sun.shadow.camera.bottom = -36;
+  world.scene.add(sun);
+
+  buildTrainingField(THREE);
+  buildDrone(THREE);
+  window.addEventListener("resize", resizeRenderer);
+  resizeRenderer();
+  state.threeReady = true;
+  return true;
+}
+
+function showThreeError() {
+  const fallback = document.createElement("div");
+  fallback.className = "engine-error";
+  fallback.textContent = "Three.jsを読み込めませんでした。ネットワーク接続を確認して再読み込みしてください。";
+  canvas.replaceWith(fallback);
+}
+
+function buildTrainingField(THREE) {
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(90, 90),
+    new THREE.MeshStandardMaterial({ color: 0x617453, roughness: 0.92 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  world.scene.add(ground);
+
+  const padMat = new THREE.MeshStandardMaterial({ color: 0x2f3930, roughness: 0.85 });
+  const lineMat = new THREE.MeshBasicMaterial({ color: 0xeef6e8 });
+  const yellowMat = new THREE.MeshStandardMaterial({ color: 0xf2c94c, roughness: 0.6 });
+  const redMat = new THREE.MeshStandardMaterial({ color: 0xef6f6c, roughness: 0.5 });
+  const blueMat = new THREE.MeshStandardMaterial({ color: 0x4aa3df, roughness: 0.65 });
+
+  const runway = new THREE.Mesh(new THREE.PlaneGeometry(11, 23), padMat);
+  runway.rotation.x = -Math.PI / 2;
+  runway.position.set(0, 0.012, 7.5);
+  runway.receiveShadow = true;
+  world.scene.add(runway);
+
+  for (let z = -2; z <= 18; z += 2) {
+    addLine(THREE, -5.5, z, 5.5, z, lineMat);
+  }
+  addLine(THREE, -5.5, -3, -5.5, 19, lineMat);
+  addLine(THREE, 5.5, -3, 5.5, 19, lineMat);
+  addLine(THREE, 0, -3, 0, 19, lineMat);
+
+  addLandingPad(THREE, 0, 0, "着陸");
+  addTargetRing(THREE, 0, 8, 1.35, yellowMat, "move");
+  addPole(THREE, -2.8, 10, redMat);
+  addPole(THREE, 2.8, 10, redMat);
+  addTargetRing(THREE, -2.8, 10, 1.25, redMat, "left");
+  addTargetRing(THREE, 2.8, 10, 1.25, redMat, "right");
+
+  addGate(THREE, -6.5, 4.5, blueMat);
+  addGate(THREE, 6.5, 12.5, blueMat);
+  addPilotStand(THREE);
+  addFence(THREE);
+  addBuildings(THREE);
+  addTrees(THREE);
+}
+
+function addLine(THREE, x1, z1, x2, z2, material) {
+  const length = Math.hypot(x2 - x1, z2 - z1);
+  const line = new THREE.Mesh(new THREE.PlaneGeometry(0.045, length), material);
+  line.rotation.x = -Math.PI / 2;
+  line.rotation.z = -Math.atan2(z2 - z1, x2 - x1) + Math.PI / 2;
+  line.position.set((x1 + x2) / 2, 0.025, (z1 + z2) / 2);
+  world.scene.add(line);
+}
+
+function addLandingPad(THREE, x, z) {
+  const pad = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.15, 1.15, 0.045, 64),
+    new THREE.MeshStandardMaterial({ color: 0x58c48f, roughness: 0.55 })
+  );
+  pad.position.set(x, 0.04, z);
+  pad.receiveShadow = true;
+  world.scene.add(pad);
+
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(1.15, 0.035, 10, 64),
+    new THREE.MeshBasicMaterial({ color: 0xf7fff8 })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.set(x, 0.08, z);
+  world.scene.add(ring);
+  world.targetRings.landing = ring;
+}
+
+function addTargetRing(THREE, x, z, radius, material, key) {
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.04, 12, 72), material);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.set(x, 0.09, z);
+  world.scene.add(ring);
+  world.targetRings[key] = ring;
+}
+
+function addPole(THREE, x, z, material) {
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.2, 16), material);
+  pole.position.set(x, 1.1, z);
+  pole.castShadow = true;
+  world.scene.add(pole);
+
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.22, 24, 16), material);
+  cap.position.set(x, 2.26, z);
+  cap.castShadow = true;
+  world.scene.add(cap);
+}
+
+function addGate(THREE, x, z, material) {
+  const group = new THREE.Group();
+  const postGeometry = new THREE.BoxGeometry(0.12, 2.4, 0.12);
+  const crossGeometry = new THREE.BoxGeometry(2.2, 0.12, 0.12);
+  [-1, 1].forEach((side) => {
+    const post = new THREE.Mesh(postGeometry, material);
+    post.position.set(side * 1.1, 1.2, 0);
+    post.castShadow = true;
+    group.add(post);
+  });
+  const cross = new THREE.Mesh(crossGeometry, material);
+  cross.position.set(0, 2.35, 0);
+  cross.castShadow = true;
+  group.add(cross);
+  group.position.set(x, 0, z);
+  group.rotation.y = x < 0 ? 0.45 : -0.45;
+  world.scene.add(group);
+}
+
+function addPilotStand(THREE) {
+  const mat = new THREE.MeshStandardMaterial({ color: 0x222725, roughness: 0.8 });
+  const platform = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.18, 1.6), mat);
+  platform.position.set(-7.6, 0.09, -1.7);
+  platform.castShadow = true;
+  platform.receiveShadow = true;
+  world.scene.add(platform);
+
+  const pilot = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.22, 1.1, 8, 16),
+    new THREE.MeshStandardMaterial({ color: 0xf2c94c, roughness: 0.7 })
+  );
+  pilot.position.set(-7.6, 0.88, -1.7);
+  pilot.castShadow = true;
+  world.scene.add(pilot);
+}
+
+function addFence(THREE) {
+  const mat = new THREE.MeshStandardMaterial({ color: 0xdce6d7, roughness: 0.7 });
+  const postGeometry = new THREE.BoxGeometry(0.08, 1.1, 0.08);
+  for (let x = -18; x <= 18; x += 2) {
+    [-8, 23].forEach((z) => {
+      const post = new THREE.Mesh(postGeometry, mat);
+      post.position.set(x, 0.55, z);
+      post.castShadow = true;
+      world.scene.add(post);
+    });
+  }
+  for (let z = -8; z <= 23; z += 2) {
+    [-18, 18].forEach((x) => {
+      const post = new THREE.Mesh(postGeometry, mat);
+      post.position.set(x, 0.55, z);
+      post.castShadow = true;
+      world.scene.add(post);
+    });
+  }
+}
+
+function addBuildings(THREE) {
+  const mats = [
+    new THREE.MeshStandardMaterial({ color: 0x7a8c96, roughness: 0.82 }),
+    new THREE.MeshStandardMaterial({ color: 0xb9c0b4, roughness: 0.82 }),
+    new THREE.MeshStandardMaterial({ color: 0x6f8b7c, roughness: 0.82 }),
+  ];
+  [
+    [-24, 2, 4, 5, 6],
+    [24, 8, 5, 7, 4],
+    [-22, 18, 5, 4, 5],
+    [23, 20, 4, 6, 7],
+  ].forEach(([x, z, w, h, d], index) => {
+    const building = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mats[index % mats.length]);
+    building.position.set(x, h / 2, z);
+    building.castShadow = true;
+    building.receiveShadow = true;
+    world.scene.add(building);
+  });
+}
+
+function addTrees(THREE) {
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x554435, roughness: 0.9 });
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0x3f7f52, roughness: 0.85 });
+  for (let i = 0; i < 26; i += 1) {
+    const angle = i * 1.91;
+    const x = Math.cos(angle) * (21 + (i % 4));
+    const z = Math.sin(angle) * (17 + (i % 5)) + 8;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 1.4, 8), trunkMat);
+    trunk.position.set(x, 0.7, z);
+    trunk.castShadow = true;
+    world.scene.add(trunk);
+    const leaves = new THREE.Mesh(new THREE.ConeGeometry(0.9, 2.2, 12), leafMat);
+    leaves.position.set(x, 2.25, z);
+    leaves.castShadow = true;
+    world.scene.add(leaves);
+  }
+}
+
+function buildDrone(THREE) {
+  const group = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0xf0f5ee, metalness: 0.25, roughness: 0.42 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x151817, metalness: 0.2, roughness: 0.55 });
+  const accentMat = new THREE.MeshStandardMaterial({ color: 0x58c48f, roughness: 0.4 });
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.18, 0.5), bodyMat);
+  body.castShadow = true;
+  group.add(body);
+
+  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.08, 0.24), accentMat);
+  nose.position.set(0, 0.03, -0.34);
+  nose.castShadow = true;
+  group.add(nose);
+
+  const armGeometry = new THREE.BoxGeometry(1.55, 0.06, 0.08);
+  [-0.48, 0.48].forEach((z, index) => {
+    const arm = new THREE.Mesh(armGeometry, darkMat);
+    arm.position.z = z;
+    arm.rotation.y = index === 0 ? 0.34 : -0.34;
+    arm.castShadow = true;
+    group.add(arm);
+  });
+
+  const motorGeometry = new THREE.CylinderGeometry(0.12, 0.12, 0.12, 20);
+  const propGeometry = new THREE.BoxGeometry(0.7, 0.018, 0.08);
+  [
+    [-0.72, -0.56],
+    [0.72, -0.56],
+    [-0.72, 0.56],
+    [0.72, 0.56],
+  ].forEach(([x, z], index) => {
+    const motor = new THREE.Mesh(motorGeometry, darkMat);
+    motor.position.set(x, 0.02, z);
+    motor.rotation.x = Math.PI / 2;
+    motor.castShadow = true;
+    group.add(motor);
+
+    const prop = new THREE.Mesh(propGeometry, accentMat);
+    prop.position.set(x, 0.11, z);
+    prop.rotation.y = index % 2 ? Math.PI / 2 : 0;
+    prop.castShadow = true;
+    group.add(prop);
+    world.propellers.push(prop);
+  });
+
+  world.shadow = new THREE.Mesh(
+    new THREE.CircleGeometry(0.9, 48),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.24, depthWrite: false })
+  );
+  world.shadow.rotation.x = -Math.PI / 2;
+  world.shadow.position.y = 0.035;
+  world.scene.add(world.shadow);
+
+  world.drone = group;
+  world.scene.add(group);
+}
+
+function resizeRenderer() {
+  if (!world.renderer || !world.camera) return;
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.floor(rect.width));
+  const height = Math.max(1, Math.floor(rect.height));
+  world.renderer.setSize(width, height, false);
+  world.camera.aspect = width / height;
+  world.camera.updateProjectionMatrix();
+}
+
+function updateThreeWorld(dt) {
+  if (!state.threeReady) return;
+  const THREE = window.THREE;
+  const d = state.drone;
+  world.drone.position.set(d.x, d.y + 0.18, d.z);
+  world.drone.rotation.set(-d.vz * 0.035, d.yaw, -d.vx * 0.035);
+
+  world.propellers.forEach((prop, index) => {
+    prop.rotation.y += (index % 2 ? -1 : 1) * (18 + Math.abs(d.vy) * 8) * dt;
+  });
+
+  world.shadow.position.set(d.x, 0.04, d.z);
+  const shadowScale = clamp(1.15 - d.y * 0.12, 0.35, 1.15);
+  world.shadow.scale.set(shadowScale, shadowScale, shadowScale);
+  world.shadow.material.opacity = clamp(0.28 - d.y * 0.045, 0.07, 0.28);
+
+  Object.entries(world.targetRings).forEach(([key, ring]) => {
+    const active =
+      (state.phase === "move" && key === "move") ||
+      (state.phase === "eight" && (key === "left" || key === "right")) ||
+      (state.phase === "landing" && key === "landing");
+    ring.scale.setScalar(active ? 1 + Math.sin(performance.now() / 180) * 0.04 : 1);
+  });
+
+  const pilotEye = new THREE.Vector3(-7.8, 2.1, -4.4);
+  const chase = new THREE.Vector3(d.x - Math.sin(d.yaw) * 3.8, d.y + 2.2, d.z - Math.cos(d.yaw) * 5.2);
+  const cameraTarget = state.phase === "preflight" ? pilotEye : pilotEye.lerp(chase, 0.48);
+  world.camera.position.lerp(cameraTarget, 0.065);
+  world.camera.lookAt(d.x, Math.max(0.8, d.y + 0.35), d.z + 1.8);
+  world.renderer.render(world.scene, world.camera);
+}
 
 function buildChecklist() {
   ui.checklist.innerHTML = "";
@@ -137,8 +483,7 @@ function setMode(mode) {
 
 function setPhase(phase) {
   state.phase = phase;
-  state.phaseStart = performance.now();
-  state.lastPhaseChange = state.phaseStart;
+  state.lastPhaseChange = performance.now();
   const copy = phases[phase];
   ui.phaseTitle.textContent = copy.title;
   ui.phaseHint.textContent = copy.hint;
@@ -148,8 +493,6 @@ function setPhase(phase) {
     item.classList.toggle("done", phaseOrder.indexOf(item.dataset.phase) < phaseOrder.indexOf(phase));
   });
 }
-
-const phaseOrder = ["preflight", "takeoff", "move", "eight", "landing", "result"];
 
 function reset() {
   state.phase = "preflight";
@@ -247,8 +590,12 @@ function updatePhysics(dt, input) {
   }
 
   const horizontalPower = d.y > 0.08 ? 6.5 : 0;
-  d.vx += input.strafe * horizontalPower * dt;
-  d.vz += input.forward * horizontalPower * dt;
+  const forwardX = Math.sin(d.yaw);
+  const forwardZ = Math.cos(d.yaw);
+  const rightX = Math.cos(d.yaw);
+  const rightZ = -Math.sin(d.yaw);
+  d.vx += (input.forward * forwardX + input.strafe * rightX) * horizontalPower * dt;
+  d.vz += (input.forward * forwardZ + input.strafe * rightZ) * horizontalPower * dt;
   d.vy += input.throttle * 3.8 * dt;
   d.yaw += input.yaw * 1.8 * dt;
 
@@ -350,149 +697,6 @@ function finishExam() {
   ui.feedback.innerHTML = feedback.map((item) => `<li>${item}</li>`).join("");
 }
 
-function drawScene() {
-  const w = canvas.width;
-  const h = canvas.height;
-  ctx.clearRect(0, 0, w, h);
-
-  const horizon = h * 0.42;
-  const sky = ctx.createLinearGradient(0, 0, 0, horizon);
-  sky.addColorStop(0, "#86b7c4");
-  sky.addColorStop(1, "#b9d2c5");
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, w, horizon);
-
-  const ground = ctx.createLinearGradient(0, horizon, 0, h);
-  ground.addColorStop(0, "#65785f");
-  ground.addColorStop(1, "#2f4034");
-  ctx.fillStyle = ground;
-  ctx.fillRect(0, horizon, w, h - horizon);
-
-  drawRunway();
-  drawMarker(0, 0, "#58c48f", "着陸");
-  drawMarker(0, 8, "#f2c94c", "停止");
-  drawMarker(-2.8, 10, "#ef6f6c", "8");
-  drawMarker(2.8, 10, "#ef6f6c", "8");
-  drawDrone();
-  drawMiniMap();
-}
-
-function project(x, z, y = 0) {
-  const scale = 42 / (1 + z * 0.09);
-  return {
-    x: canvas.width / 2 + x * scale,
-    y: canvas.height * 0.78 - z * 18 - y * 74,
-    s: scale,
-  };
-}
-
-function drawRunway() {
-  ctx.save();
-  ctx.strokeStyle = "rgba(255,255,255,0.35)";
-  ctx.lineWidth = 3;
-  for (let z = 0; z <= 18; z += 2) {
-    const a = project(-5, z);
-    const b = project(5, z);
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-  }
-  ctx.strokeStyle = "rgba(255,255,255,0.46)";
-  [-5, 5, 0].forEach((x) => {
-    ctx.beginPath();
-    for (let z = 0; z <= 18; z += 0.5) {
-      const p = project(x, z);
-      if (z === 0) ctx.moveTo(p.x, p.y);
-      else ctx.lineTo(p.x, p.y);
-    }
-    ctx.stroke();
-  });
-  ctx.restore();
-}
-
-function drawMarker(x, z, color, label) {
-  const p = project(x, z);
-  ctx.save();
-  ctx.fillStyle = color;
-  ctx.strokeStyle = "rgba(0,0,0,0.35)";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.ellipse(p.x, p.y, p.s * 0.35, p.s * 0.18, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = "#101510";
-  ctx.font = "700 14px system-ui";
-  ctx.textAlign = "center";
-  ctx.fillText(label, p.x, p.y + 5);
-  ctx.restore();
-}
-
-function drawDrone() {
-  const d = state.drone;
-  const p = project(d.x, d.z, d.y);
-  const size = clamp(p.s * (0.52 + d.y * 0.06), 20, 56);
-
-  ctx.save();
-  ctx.translate(p.x, p.y);
-  ctx.rotate(d.yaw);
-  ctx.shadowColor = "rgba(0,0,0,0.42)";
-  ctx.shadowBlur = 12;
-  ctx.strokeStyle = "#111714";
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.moveTo(-size, -size * 0.52);
-  ctx.lineTo(size, size * 0.52);
-  ctx.moveTo(size, -size * 0.52);
-  ctx.lineTo(-size, size * 0.52);
-  ctx.stroke();
-  ctx.fillStyle = "#edf4ea";
-  ctx.strokeStyle = "#121812";
-  ctx.lineWidth = 3;
-  ctx.fillRect(-size * 0.38, -size * 0.22, size * 0.76, size * 0.44);
-  ctx.strokeRect(-size * 0.38, -size * 0.22, size * 0.76, size * 0.44);
-  [[-1, -0.52], [1, -0.52], [-1, 0.52], [1, 0.52]].forEach(([sx, sy]) => {
-    ctx.beginPath();
-    ctx.ellipse(sx * size, sy * size, size * 0.36, size * 0.12, 0, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(20,24,22,0.88)";
-    ctx.fill();
-  });
-  ctx.restore();
-
-  const shadow = project(d.x, d.z, 0);
-  ctx.save();
-  ctx.fillStyle = `rgba(0,0,0,${clamp(0.28 - d.y * 0.04, 0.08, 0.28)})`;
-  ctx.beginPath();
-  ctx.ellipse(shadow.x, shadow.y + 12, size * 0.8, size * 0.25, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawMiniMap() {
-  const x = 18;
-  const y = canvas.height - 178;
-  const w = 160;
-  const h = 150;
-  ctx.save();
-  ctx.fillStyle = "rgba(18,22,19,0.72)";
-  ctx.strokeStyle = "rgba(255,255,255,0.18)";
-  roundRect(x, y, w, h, 8);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = "#b9c0b4";
-  ctx.font = "12px system-ui";
-  ctx.fillText("位置", x + 12, y + 22);
-  const px = x + w / 2 + state.drone.x * 7;
-  const py = y + h - 22 - state.drone.z * 6;
-  ctx.fillStyle = "#58c48f";
-  ctx.beginPath();
-  ctx.arc(px, py, 5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = "rgba(255,255,255,0.26)";
-  ctx.strokeRect(x + 28, y + 32, 104, 94);
-  ctx.restore();
-}
-
 function renderReadouts() {
   const d = state.drone;
   ui.altitude.textContent = `${d.y.toFixed(1)}m`;
@@ -506,14 +710,13 @@ function renderReadouts() {
   }
 }
 
-function loop(now) {
-  const dt = Math.min(0.033, (now - (loop.last || now)) / 1000);
-  loop.last = now;
+function loop() {
+  const dt = world.clock ? Math.min(0.033, world.clock.getDelta()) : 0.016;
   updateControllerStatus();
   const input = readInput();
   updatePhysics(dt, input);
   updateMission(dt);
-  drawScene();
+  updateThreeWorld(dt);
   renderReadouts();
   requestAnimationFrame(loop);
 }
@@ -532,16 +735,6 @@ function formatTime(seconds) {
   const min = String(Math.floor(whole / 60)).padStart(2, "0");
   const sec = String(whole % 60).padStart(2, "0");
   return `${min}:${sec}`;
-}
-
-function roundRect(x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
 }
 
 ui.modeButtons.forEach((button) => {
@@ -566,6 +759,7 @@ window.addEventListener("keyup", (event) => state.keys.delete(event.code));
 window.addEventListener("gamepadconnected", updateControllerStatus);
 window.addEventListener("gamepaddisconnected", updateControllerStatus);
 
+initThreeWorld();
 reset();
 setMode("practice");
 requestAnimationFrame(loop);

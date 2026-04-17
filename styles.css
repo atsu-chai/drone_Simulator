@@ -51,6 +51,18 @@ select {
   height: 100%;
 }
 
+.engine-error {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 28px;
+  background: #151817;
+  color: var(--text);
+  text-align: center;
+  line-height: 1.6;
+}
+
 .hud {
   position: absolute;
   border: 1px solid rgba(255, 255, 255, 0.16);
