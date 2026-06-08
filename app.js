@@ -84,6 +84,24 @@ const abnormalTargets = [
   { key: "abnormalB", x: -5.4, z: 8.5 },
 ];
 
+const flightModel = {
+  fixedStep: 1 / 120,
+  massKg: 1.15,
+  gravity: 9.81,
+  maxTilt: 28 * Math.PI / 180,
+  maxYawRate: 100 * Math.PI / 180,
+  maxClimbRate: 2.2,
+  maxDescentRate: 1.6,
+  maxThrustNewtons: 22.4,
+  motorTimeConstant: 0.16,
+  attitudeKp: 30,
+  attitudeKd: 9,
+  yawKp: 11,
+  horizontalLinearDrag: 0.12,
+  horizontalQuadraticDrag: 0.055,
+  verticalDrag: 0.18,
+};
+
 const state = {
   mode: "practice",
   phase: "preflight",
@@ -99,9 +117,21 @@ const state = {
   eightProgress: 0,
   abnormalIndex: 0,
   landingDrift: 0,
-  maxAltitudeJitter: 0,
+  altitudeErrorSquared: 0,
+  altitudeSampleTime: 0,
+  hardLandingSpeed: 0,
+  boundaryViolations: 0,
   responseDelays: [],
+  respondedPhase: null,
   lastPhaseChange: performance.now(),
+  physicsAccumulator: 0,
+  simulationTime: 0,
+  command: {
+    throttle: 0,
+    forward: 0,
+    strafe: 0,
+    yaw: 0,
+  },
   drone: {
     x: 0,
     z: 0,
@@ -110,6 +140,12 @@ const state = {
     vz: 0,
     vy: 0,
     yaw: 0,
+    yawRate: 0,
+    roll: 0,
+    pitch: 0,
+    rollRate: 0,
+    pitchRate: 0,
+    thrustNewtons: 0,
   },
   keys: new Set(),
   inputReady: false,
@@ -123,9 +159,12 @@ const world = {
   drone: null,
   shadow: null,
   propellers: [],
+  rotorDiscs: [],
   targetRings: {},
-  warning: null,
   clock: null,
+  cameraLookTarget: null,
+  cameraDesiredTarget: null,
+  pilotEye: null,
 };
 
 function initThreeWorld() {
@@ -146,6 +185,9 @@ function initThreeWorld() {
 
   world.camera = new THREE.PerspectiveCamera(54, 1, 0.1, 120);
   world.clock = new THREE.Clock();
+  world.cameraLookTarget = new THREE.Vector3(0, 1, 0);
+  world.cameraDesiredTarget = new THREE.Vector3(0, 1, 0);
+  world.pilotEye = new THREE.Vector3(-7.8, 2.05, -4.4);
 
   const hemi = new THREE.HemisphereLight(0xd8f0ff, 0x4b5942, 1.7);
   world.scene.add(hemi);
@@ -374,7 +416,7 @@ function buildDrone(THREE) {
   group.add(body);
 
   const nose = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.08, 0.24), accentMat);
-  nose.position.set(0, 0.03, -0.34);
+  nose.position.set(0, 0.03, 0.34);
   nose.castShadow = true;
   group.add(nose);
 
@@ -389,6 +431,14 @@ function buildDrone(THREE) {
 
   const motorGeometry = new THREE.CylinderGeometry(0.12, 0.12, 0.12, 20);
   const propGeometry = new THREE.BoxGeometry(0.7, 0.018, 0.08);
+  const rotorDiscGeometry = new THREE.CircleGeometry(0.36, 32);
+  const rotorDiscMaterial = new THREE.MeshBasicMaterial({
+    color: 0xc9f3dd,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
   [
     [-0.72, -0.56],
     [0.72, -0.56],
@@ -407,6 +457,12 @@ function buildDrone(THREE) {
     prop.castShadow = true;
     group.add(prop);
     world.propellers.push(prop);
+
+    const rotorDisc = new THREE.Mesh(rotorDiscGeometry, rotorDiscMaterial.clone());
+    rotorDisc.position.set(x, 0.115, z);
+    rotorDisc.rotation.x = -Math.PI / 2;
+    group.add(rotorDisc);
+    world.rotorDiscs.push(rotorDisc);
   });
 
   world.shadow = new THREE.Mesh(
@@ -418,6 +474,7 @@ function buildDrone(THREE) {
   world.scene.add(world.shadow);
 
   world.drone = group;
+  world.drone.rotation.order = "YXZ";
   world.scene.add(group);
 }
 
@@ -436,10 +493,16 @@ function updateThreeWorld(dt) {
   const THREE = window.THREE;
   const d = state.drone;
   world.drone.position.set(d.x, d.y + 0.18, d.z);
-  world.drone.rotation.set(-d.vz * 0.035, d.yaw, -d.vx * 0.035);
+  world.drone.rotation.set(d.pitch, d.yaw, d.roll);
 
   world.propellers.forEach((prop, index) => {
-    prop.rotation.y += (index % 2 ? -1 : 1) * (18 + Math.abs(d.vy) * 8) * dt;
+    const thrustAcceleration = d.thrustNewtons / flightModel.massKg;
+    const rotorSpeed = 8 + thrustAcceleration * 2.8;
+    prop.rotation.y += (index % 2 ? -1 : 1) * rotorSpeed * dt;
+  });
+  world.rotorDiscs.forEach((disc) => {
+    const thrustAcceleration = d.thrustNewtons / flightModel.massKg;
+    disc.material.opacity = clamp((thrustAcceleration - 3) / 55, 0, 0.22);
   });
 
   world.shadow.position.set(d.x, 0.04, d.z);
@@ -458,11 +521,10 @@ function updateThreeWorld(dt) {
     ring.scale.setScalar(active ? 1 + Math.sin(performance.now() / 180) * 0.04 : 1);
   });
 
-  const pilotEye = new THREE.Vector3(-7.8, 2.1, -4.4);
-  const chase = new THREE.Vector3(d.x - Math.sin(d.yaw) * 3.8, d.y + 2.2, d.z - Math.cos(d.yaw) * 5.2);
-  const cameraTarget = state.phase === "preflight" ? pilotEye : pilotEye.lerp(chase, 0.48);
-  world.camera.position.lerp(cameraTarget, 0.065);
-  world.camera.lookAt(d.x, Math.max(0.8, d.y + 0.35), d.z + 1.8);
+  world.camera.position.lerp(world.pilotEye, 1 - Math.exp(-dt * 5));
+  world.cameraDesiredTarget.set(d.x, Math.max(0.45, d.y + 0.28), d.z);
+  world.cameraLookTarget.lerp(world.cameraDesiredTarget, 1 - Math.exp(-dt * 7));
+  world.camera.lookAt(world.cameraLookTarget);
   world.renderer.render(world.scene, world.camera);
 }
 
@@ -508,6 +570,7 @@ function setMode(mode) {
 function setPhase(phase) {
   state.phase = phase;
   state.lastPhaseChange = performance.now();
+  state.respondedPhase = null;
   const copy = phases[phase];
   ui.phaseTitle.textContent = copy.title;
   ui.phaseHint.textContent = copy.hint;
@@ -530,9 +593,30 @@ function reset() {
   state.eightProgress = 0;
   state.abnormalIndex = 0;
   state.landingDrift = 0;
-  state.maxAltitudeJitter = 0;
+  state.altitudeErrorSquared = 0;
+  state.altitudeSampleTime = 0;
+  state.hardLandingSpeed = 0;
+  state.boundaryViolations = 0;
   state.responseDelays = [];
-  Object.assign(state.drone, { x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, yaw: 0 });
+  state.respondedPhase = null;
+  state.physicsAccumulator = 0;
+  state.simulationTime = 0;
+  Object.assign(state.command, { throttle: 0, forward: 0, strafe: 0, yaw: 0 });
+  Object.assign(state.drone, {
+    x: 0,
+    z: 0,
+    y: 0,
+    vx: 0,
+    vz: 0,
+    vy: 0,
+    yaw: 0,
+    yawRate: 0,
+    roll: 0,
+    pitch: 0,
+    rollRate: 0,
+    pitchRate: 0,
+    thrustNewtons: 0,
+  });
   ui.resultPanel.hidden = true;
   ui.start.disabled = true;
   ui.start.textContent = "試験を開始";
@@ -608,45 +692,169 @@ function readInput() {
   return input;
 }
 
-function updatePhysics(dt, input) {
+function updatePhysics(dt, rawInput) {
   const d = state.drone;
-  const hasPilotInput = Math.abs(input.throttle) + Math.abs(input.forward) + Math.abs(input.strafe) + Math.abs(input.yaw) > 0.12;
-  if (state.running && hasPilotInput && state.responseDelays.length < phaseOrder.length) {
+  state.simulationTime += dt;
+  const commandResponse = 1 - Math.exp(-dt * 10);
+  const throttleTarget = state.running ? rawInput.throttle : 0;
+  const forwardTarget = state.running ? rawInput.forward : 0;
+  const strafeTarget = state.running ? rawInput.strafe : 0;
+  const yawTarget = state.running ? rawInput.yaw : 0;
+  state.command.throttle += (throttleTarget - state.command.throttle) * commandResponse;
+  state.command.forward += (forwardTarget - state.command.forward) * commandResponse;
+  state.command.strafe += (strafeTarget - state.command.strafe) * commandResponse;
+  state.command.yaw += (yawTarget - state.command.yaw) * commandResponse;
+
+  const input = state.command;
+  const hasPilotInput =
+    Math.abs(rawInput.throttle) +
+    Math.abs(rawInput.forward) +
+    Math.abs(rawInput.strafe) +
+    Math.abs(rawInput.yaw) > 0.12;
+  if (state.running && hasPilotInput && state.respondedPhase !== state.phase) {
     state.responseDelays.push((performance.now() - state.lastPhaseChange) / 1000);
+    state.respondedPhase = state.phase;
   }
 
-  const horizontalPower = d.y > 0.08 ? 6.5 : 0;
-  const forwardX = Math.sin(d.yaw);
-  const forwardZ = Math.cos(d.yaw);
-  const rightX = Math.cos(d.yaw);
-  const rightZ = -Math.sin(d.yaw);
-  d.vx += (input.forward * forwardX + input.strafe * rightX) * horizontalPower * dt;
-  d.vz += (input.forward * forwardZ + input.strafe * rightZ) * horizontalPower * dt;
-  d.vy += input.throttle * 3.8 * dt;
-  d.yaw += input.yaw * 1.8 * dt;
-
-  if (Math.abs(input.forward) + Math.abs(input.strafe) > 0.2) {
-    d.vy -= 0.55 * dt;
+  if (!state.running) {
+    const settle = Math.exp(-dt * 8);
+    d.roll *= settle;
+    d.pitch *= settle;
+    d.rollRate *= settle;
+    d.pitchRate *= settle;
+    d.yawRate *= settle;
+    d.thrustNewtons *= Math.exp(-dt * 5);
+    return;
   }
 
-  const horizontalDamping = state.phase === "abnormal" || state.phase === "landing" ? 0.93 : 0.86;
-  d.vx *= Math.pow(horizontalDamping, dt * 8);
-  d.vz *= Math.pow(horizontalDamping, dt * 8);
-  d.vy *= Math.pow(0.82, dt * 8);
+  const positionHold = state.phase !== "abnormal" && state.phase !== "landing";
+  const cosYaw = Math.cos(d.yaw);
+  const sinYaw = Math.sin(d.yaw);
+  const localRightVelocity = d.vx * cosYaw - d.vz * sinYaw;
+  const localForwardVelocity = d.vx * sinYaw + d.vz * cosYaw;
+  const tiltLimit = positionHold ? flightModel.maxTilt : flightModel.maxTilt * 0.8;
 
-  if (state.phase === "abnormal" || state.phase === "landing") {
-    d.vx += Math.sin(performance.now() / 900) * 0.18 * dt;
-    d.vz += Math.cos(performance.now() / 1100) * 0.12 * dt;
+  let desiredPitch = input.forward * tiltLimit;
+  let desiredRoll = -input.strafe * tiltLimit;
+  if (positionHold) {
+    const forwardBrake = Math.abs(input.forward) < 0.08 ? 0.115 : 0.035;
+    const rightBrake = Math.abs(input.strafe) < 0.08 ? 0.115 : 0.035;
+    desiredPitch -= localForwardVelocity * forwardBrake;
+    desiredRoll += localRightVelocity * rightBrake;
+  } else {
+    const trim = 0.012;
+    desiredPitch += Math.sin(state.simulationTime / 2.3) * trim;
+    desiredRoll += Math.cos(state.simulationTime / 1.9) * trim;
   }
+  desiredPitch = clamp(desiredPitch, -tiltLimit, tiltLimit);
+  desiredRoll = clamp(desiredRoll, -tiltLimit, tiltLimit);
 
-  d.x = clamp(d.x + d.vx * dt, -10.5, 10.5);
-  d.z = clamp(d.z + d.vz * dt, -2, 18);
-  d.y = clamp(d.y + d.vy * dt, 0, 4);
-  if (d.y === 0) d.vy = Math.max(0, d.vy);
+  const pitchAcceleration =
+    flightModel.attitudeKp * (desiredPitch - d.pitch) -
+    flightModel.attitudeKd * d.pitchRate;
+  const rollAcceleration =
+    flightModel.attitudeKp * (desiredRoll - d.roll) -
+    flightModel.attitudeKd * d.rollRate;
+  d.pitchRate += pitchAcceleration * dt;
+  d.rollRate += rollAcceleration * dt;
+  d.pitch += d.pitchRate * dt;
+  d.roll += d.rollRate * dt;
+
+  const desiredYawRate = input.yaw * flightModel.maxYawRate;
+  d.yawRate += (desiredYawRate - d.yawRate) * flightModel.yawKp * dt;
+  d.yaw += d.yawRate * dt;
+  if (d.yaw > Math.PI) d.yaw -= Math.PI * 2;
+  if (d.yaw < -Math.PI) d.yaw += Math.PI * 2;
+
+  const desiredVerticalVelocity =
+    input.throttle >= 0
+      ? input.throttle * flightModel.maxClimbRate
+      : input.throttle * flightModel.maxDescentRate;
+  const tiltCosine = Math.max(0.64, Math.cos(d.roll) * Math.cos(d.pitch));
+  const verticalControl = clamp((desiredVerticalVelocity - d.vy) * 4.4, -6.8, 7.5);
+  const grounded = d.y <= 0.001 && d.vy <= 0;
+  let targetThrustNewtons =
+    grounded && input.throttle <= 0.02
+      ? 0
+      : flightModel.massKg * (flightModel.gravity + verticalControl) / tiltCosine;
+  targetThrustNewtons = clamp(
+    targetThrustNewtons,
+    0,
+    flightModel.maxThrustNewtons
+  );
+  const motorResponse = 1 - Math.exp(-dt / flightModel.motorTimeConstant);
+  d.thrustNewtons +=
+    (targetThrustNewtons - d.thrustNewtons) * motorResponse;
+
+  const groundEffect =
+    d.y > 0 && d.y < 0.65
+      ? 1 + 0.1 * Math.pow(1 - d.y / 0.65, 2)
+      : 1;
+  const thrustAcceleration = d.thrustNewtons / flightModel.massKg;
+  const effectiveThrustAcceleration = thrustAcceleration * groundEffect;
+  const localRightAcceleration = -Math.sin(d.roll) * effectiveThrustAcceleration;
+  const localForwardAcceleration =
+    Math.sin(d.pitch) * Math.cos(d.roll) * effectiveThrustAcceleration;
+  const verticalAcceleration =
+    tiltCosine * effectiveThrustAcceleration -
+    flightModel.gravity -
+    d.vy * flightModel.verticalDrag;
+
+  const accelerationX =
+    localRightAcceleration * cosYaw +
+    localForwardAcceleration * sinYaw -
+    flightModel.horizontalLinearDrag * d.vx -
+    flightModel.horizontalQuadraticDrag * Math.abs(d.vx) * d.vx;
+  const accelerationZ =
+    localForwardAcceleration * cosYaw -
+    localRightAcceleration * sinYaw -
+    flightModel.horizontalLinearDrag * d.vz -
+    flightModel.horizontalQuadraticDrag * Math.abs(d.vz) * d.vz;
+
+  d.vx += accelerationX * dt;
+  d.vz += accelerationZ * dt;
+  d.vy += verticalAcceleration * dt;
+
+  const nextX = d.x + d.vx * dt;
+  const nextZ = d.z + d.vz * dt;
+  const nextY = d.y + d.vy * dt;
+  if (nextX < -10.5 || nextX > 10.5) {
+    if (Math.abs(d.vx) > 0.4) state.boundaryViolations += 1;
+    d.x = clamp(nextX, -10.5, 10.5);
+    d.vx *= -0.12;
+  } else {
+    d.x = nextX;
+  }
+  if (nextZ < -2 || nextZ > 18) {
+    if (Math.abs(d.vz) > 0.4) state.boundaryViolations += 1;
+    d.z = clamp(nextZ, -2, 18);
+    d.vz *= -0.12;
+  } else {
+    d.z = nextZ;
+  }
+  if (nextY <= 0) {
+    if (d.y > 0.01) {
+      state.hardLandingSpeed = Math.max(state.hardLandingSpeed, Math.max(0, -d.vy));
+    }
+    d.y = 0;
+    d.vy = 0;
+    const groundFriction = Math.exp(-dt * 7);
+    d.vx *= groundFriction;
+    d.vz *= groundFriction;
+  } else {
+    d.y = Math.min(nextY, 6);
+    if (d.y >= 6) d.vy = Math.min(0, d.vy);
+  }
 
   const jitter = Math.abs(d.y - targetAltitude());
-  if (state.running && state.phase !== "landing") {
-    state.maxAltitudeJitter = Math.max(state.maxAltitudeJitter, jitter);
+  const altitudeCanBeScored =
+    (state.phase === "takeoff" && d.y > 3) ||
+    state.phase === "square" ||
+    state.phase === "eight" ||
+    state.phase === "abnormal";
+  if (altitudeCanBeScored) {
+    state.altitudeErrorSquared += jitter * jitter * dt;
+    state.altitudeSampleTime += dt;
   }
 }
 
@@ -707,7 +915,9 @@ function updateMission(dt) {
   }
 
   if (state.phase === "landing") {
-    state.landingDrift = Math.max(state.landingDrift, Math.hypot(d.vx, d.vz));
+    if (d.y < 1.2) {
+      state.landingDrift = Math.max(state.landingDrift, Math.hypot(d.vx, d.vz));
+    }
     if (Math.hypot(d.x + 5.4, d.z - 2.2) < 0.9 && d.y < 0.08 && Math.hypot(d.vx, d.vz) < 0.55) {
       finishExam();
     }
@@ -719,14 +929,19 @@ function finishExam() {
   setPhase("result");
   const feedback = [];
   let score = 100;
+  const altitudeRms =
+    state.altitudeSampleTime > 0
+      ? Math.sqrt(state.altitudeErrorSquared / state.altitudeSampleTime)
+      : 0;
+  const fatalLanding = state.hardLandingSpeed >= 3;
 
   if (state.checklistMistakes > 0) {
     score -= state.checklistMistakes * 8;
     feedback.push("点検手順に順序ミスがあります。声に出して確認順を固定してください。");
   }
-  if (state.maxAltitudeJitter > 0.65) {
+  if (altitudeRms > 0.35) {
     score -= 16;
-    feedback.push("高度維持が不安定です。水平移動時のスロットル補正を小さく早めに入れてください。");
+    feedback.push(`高度維持の平均誤差が${altitudeRms.toFixed(2)}mです。水平移動時の上昇・下降補正を小さく早めに入れてください。`);
   }
   if (state.squareIndex < squareTargets.length) {
     score -= 14;
@@ -739,6 +954,14 @@ function finishExam() {
   if (state.landingDrift > 0.9) {
     score -= 18;
     feedback.push("着陸時に機体が流れる傾向があります。接地前に水平速度を十分に落としてください。");
+  }
+  if (state.hardLandingSpeed > 1.5) {
+    score -= fatalLanding ? 100 : 18;
+    feedback.push(`接地時の降下速度が${state.hardLandingSpeed.toFixed(1)}m/sです。接地直前の降下率を抑えてください。`);
+  }
+  if (state.boundaryViolations > 0) {
+    score -= Math.min(20, state.boundaryViolations * 5);
+    feedback.push("飛行可能範囲を逸脱しています。減速開始位置と機体の慣性を意識してください。");
   }
   const avgResponse = average(state.responseDelays);
   if (avgResponse > 2.8) {
@@ -755,7 +978,7 @@ function finishExam() {
 
   score = Math.max(0, Math.round(score));
   ui.resultPanel.hidden = false;
-  ui.passFail.textContent = score >= 70 ? "合格" : "不合格";
+  ui.passFail.textContent = score >= 70 && !fatalLanding ? "合格" : "不合格";
   ui.score.textContent = `${score} / 100`;
   ui.finalTime.textContent = formatTime(state.elapsed);
   ui.feedback.innerHTML = feedback.map((item) => `<li>${item}</li>`).join("");
@@ -775,12 +998,19 @@ function renderReadouts() {
 }
 
 function loop() {
-  const dt = world.clock ? Math.min(0.033, world.clock.getDelta()) : 0.016;
+  const frameDt = world.clock ? Math.min(0.1, world.clock.getDelta()) : 0.016;
   updateControllerStatus();
   const input = readInput();
-  updatePhysics(dt, input);
-  updateMission(dt);
-  updateThreeWorld(dt);
+  state.physicsAccumulator = Math.min(
+    state.physicsAccumulator + frameDt,
+    flightModel.fixedStep * 12
+  );
+  while (state.physicsAccumulator >= flightModel.fixedStep) {
+    updatePhysics(flightModel.fixedStep, input);
+    updateMission(flightModel.fixedStep);
+    state.physicsAccumulator -= flightModel.fixedStep;
+  }
+  updateThreeWorld(frameDt);
   renderReadouts();
   requestAnimationFrame(loop);
 }
