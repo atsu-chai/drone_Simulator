@@ -1,3 +1,7 @@
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
+
 const canvas = document.getElementById("simCanvas");
 
 const ui = {
@@ -157,6 +161,8 @@ const world = {
   scene: null,
   camera: null,
   drone: null,
+  droneFallback: null,
+  droneMixer: null,
   shadow: null,
   propellers: [],
   rotorDiscs: [],
@@ -168,20 +174,23 @@ const world = {
 };
 
 function initThreeWorld() {
-  if (!window.THREE) {
+  try {
+    world.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+  } catch (error) {
+    console.error(error);
     showThreeError();
     return false;
   }
-
-  const THREE = window.THREE;
-  world.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
   world.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  world.renderer.outputColorSpace = THREE.SRGBColorSpace;
+  world.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  world.renderer.toneMappingExposure = 1.05;
   world.renderer.shadowMap.enabled = true;
   world.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   world.scene = new THREE.Scene();
-  world.scene.background = new THREE.Color(0x8fbfd0);
-  world.scene.fog = new THREE.Fog(0x8fbfd0, 28, 78);
+  world.scene.background = new THREE.Color(0xa5bec3);
+  world.scene.fog = new THREE.Fog(0xa5b7b3, 34, 86);
 
   world.camera = new THREE.PerspectiveCamera(54, 1, 0.1, 120);
   world.clock = new THREE.Clock();
@@ -189,10 +198,10 @@ function initThreeWorld() {
   world.cameraDesiredTarget = new THREE.Vector3(0, 1, 0);
   world.pilotEye = new THREE.Vector3(-7.8, 2.05, -4.4);
 
-  const hemi = new THREE.HemisphereLight(0xd8f0ff, 0x4b5942, 1.7);
+  const hemi = new THREE.HemisphereLight(0xd8f0ff, 0x465044, 0.55);
   world.scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(0xfff0cd, 2.2);
+  const sun = new THREE.DirectionalLight(0xfff2d2, 2.8);
   sun.position.set(-18, 28, 14);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -202,12 +211,28 @@ function initThreeWorld() {
   sun.shadow.camera.bottom = -36;
   world.scene.add(sun);
 
-  buildTrainingField(THREE);
-  buildDrone(THREE);
+  loadEnvironment();
+  buildTrainingField();
+  buildDrone();
   window.addEventListener("resize", resizeRenderer);
   resizeRenderer();
   state.threeReady = true;
   return true;
+}
+
+function loadEnvironment() {
+  new RGBELoader().load(
+    "assets/environment/suburban-field-01-1k.hdr",
+    (texture) => {
+      texture.mapping = THREE.EquirectangularReflectionMapping;
+      world.scene.environment = texture;
+      world.scene.background = texture;
+      world.scene.backgroundBlurriness = 0.16;
+      world.scene.backgroundIntensity = 0.82;
+    },
+    undefined,
+    (error) => console.warn("HDR環境光を読み込めませんでした。", error)
+  );
 }
 
 function showThreeError() {
@@ -217,16 +242,46 @@ function showThreeError() {
   canvas.replaceWith(fallback);
 }
 
-function buildTrainingField(THREE) {
+function loadSurfaceTextures(folder, repeatX, repeatY) {
+  const loader = new THREE.TextureLoader();
+  const setup = (texture, color = false) => {
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(repeatX, repeatY);
+    texture.anisotropy = Math.min(8, world.renderer.capabilities.getMaxAnisotropy());
+    if (color) texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  };
+
+  return {
+    map: setup(loader.load(`${folder}/diffuse.jpg`), true),
+    normalMap: setup(loader.load(`${folder}/normal.jpg`)),
+    roughnessMap: setup(loader.load(`${folder}/roughness.jpg`)),
+  };
+}
+
+function buildTrainingField() {
+  const grassTextures = loadSurfaceTextures("assets/textures/grass", 7, 7);
+  const asphaltTextures = loadSurfaceTextures("assets/textures/asphalt", 5, 3);
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(90, 90),
-    new THREE.MeshStandardMaterial({ color: 0x617453, roughness: 0.92 })
+    new THREE.MeshStandardMaterial({
+      ...grassTextures,
+      color: 0x8da083,
+      roughness: 0.98,
+      normalScale: new THREE.Vector2(0.7, 0.7),
+    })
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   world.scene.add(ground);
 
-  const padMat = new THREE.MeshStandardMaterial({ color: 0x2f3930, roughness: 0.85 });
+  const padMat = new THREE.MeshStandardMaterial({
+    ...asphaltTextures,
+    color: 0x9a9a94,
+    roughness: 0.95,
+    normalScale: new THREE.Vector2(0.55, 0.55),
+  });
   const lineMat = new THREE.MeshBasicMaterial({ color: 0xeef6e8 });
   const yellowMat = new THREE.MeshStandardMaterial({ color: 0xf2c94c, roughness: 0.6 });
   const redMat = new THREE.MeshStandardMaterial({ color: 0xef6f6c, roughness: 0.5 });
@@ -405,20 +460,21 @@ function addTrees(THREE) {
   }
 }
 
-function buildDrone(THREE) {
+function buildDrone() {
   const group = new THREE.Group();
+  const fallback = new THREE.Group();
   const bodyMat = new THREE.MeshStandardMaterial({ color: 0xf0f5ee, metalness: 0.25, roughness: 0.42 });
   const darkMat = new THREE.MeshStandardMaterial({ color: 0x151817, metalness: 0.2, roughness: 0.55 });
   const accentMat = new THREE.MeshStandardMaterial({ color: 0x58c48f, roughness: 0.4 });
 
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.18, 0.5), bodyMat);
   body.castShadow = true;
-  group.add(body);
+  fallback.add(body);
 
   const nose = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.08, 0.24), accentMat);
   nose.position.set(0, 0.03, 0.34);
   nose.castShadow = true;
-  group.add(nose);
+  fallback.add(nose);
 
   const armGeometry = new THREE.BoxGeometry(1.55, 0.06, 0.08);
   [-0.48, 0.48].forEach((z, index) => {
@@ -426,7 +482,7 @@ function buildDrone(THREE) {
     arm.position.z = z;
     arm.rotation.y = index === 0 ? 0.34 : -0.34;
     arm.castShadow = true;
-    group.add(arm);
+    fallback.add(arm);
   });
 
   const motorGeometry = new THREE.CylinderGeometry(0.12, 0.12, 0.12, 20);
@@ -449,21 +505,22 @@ function buildDrone(THREE) {
     motor.position.set(x, 0.02, z);
     motor.rotation.x = Math.PI / 2;
     motor.castShadow = true;
-    group.add(motor);
+    fallback.add(motor);
 
     const prop = new THREE.Mesh(propGeometry, accentMat);
     prop.position.set(x, 0.11, z);
     prop.rotation.y = index % 2 ? Math.PI / 2 : 0;
     prop.castShadow = true;
-    group.add(prop);
+    fallback.add(prop);
     world.propellers.push(prop);
 
     const rotorDisc = new THREE.Mesh(rotorDiscGeometry, rotorDiscMaterial.clone());
     rotorDisc.position.set(x, 0.115, z);
     rotorDisc.rotation.x = -Math.PI / 2;
-    group.add(rotorDisc);
+    fallback.add(rotorDisc);
     world.rotorDiscs.push(rotorDisc);
   });
+  group.add(fallback);
 
   world.shadow = new THREE.Mesh(
     new THREE.CircleGeometry(0.9, 48),
@@ -474,8 +531,47 @@ function buildDrone(THREE) {
   world.scene.add(world.shadow);
 
   world.drone = group;
+  world.droneFallback = fallback;
   world.drone.rotation.order = "YXZ";
   world.scene.add(group);
+  loadDroneModel();
+}
+
+function loadDroneModel() {
+  new GLTFLoader().load(
+    "assets/models/cesium-drone.glb",
+    (gltf) => {
+      const model = gltf.scene;
+      model.scale.setScalar(0.35);
+      model.updateMatrixWorld(true);
+
+      const bounds = new THREE.Box3().setFromObject(model);
+      const center = bounds.getCenter(new THREE.Vector3());
+      model.position.set(-center.x, -bounds.min.y - 0.14, -center.z);
+      model.traverse((child) => {
+        if (!child.isMesh) return;
+        child.castShadow = true;
+        child.receiveShadow = true;
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        materials.forEach((material) => {
+          material.envMapIntensity = 1.25;
+          material.needsUpdate = true;
+        });
+      });
+
+      world.drone.add(model);
+      world.droneFallback.visible = false;
+      world.propellers = [];
+      world.rotorDiscs = [];
+
+      if (gltf.animations.length > 0) {
+        world.droneMixer = new THREE.AnimationMixer(model);
+        world.droneMixer.clipAction(gltf.animations[0]).play();
+      }
+    },
+    undefined,
+    (error) => console.warn("glTF機体モデルを読み込めないため簡易モデルを使用します。", error)
+  );
 }
 
 function resizeRenderer() {
@@ -490,11 +586,14 @@ function resizeRenderer() {
 
 function updateThreeWorld(dt) {
   if (!state.threeReady) return;
-  const THREE = window.THREE;
   const d = state.drone;
   world.drone.position.set(d.x, d.y + 0.18, d.z);
   world.drone.rotation.set(d.pitch, d.yaw, d.roll);
 
+  if (world.droneMixer) {
+    world.droneMixer.timeScale = clamp((d.thrustNewtons - 0.5) / 4.5, 0, 3.2);
+    world.droneMixer.update(dt);
+  }
   world.propellers.forEach((prop, index) => {
     const thrustAcceleration = d.thrustNewtons / flightModel.massKg;
     const rotorSpeed = 8 + thrustAcceleration * 2.8;
