@@ -11,7 +11,11 @@ const ui = {
   altitude: document.getElementById("altitudeReadout"),
   speed: document.getElementById("speedReadout"),
   time: document.getElementById("timeReadout"),
+  taskTime: document.getElementById("taskTimeReadout"),
+  battery: document.getElementById("batteryReadout"),
+  stability: document.getElementById("stabilityReadout"),
   examiner: document.getElementById("examinerLine"),
+  checklistTitle: document.getElementById("checklistTitle"),
   checklist: document.getElementById("checklist"),
   start: document.getElementById("startButton"),
   reset: document.getElementById("resetButton"),
@@ -24,6 +28,7 @@ const ui = {
   score: document.getElementById("scoreValue"),
   finalTime: document.getElementById("finalTime"),
   feedback: document.getElementById("feedbackList"),
+  downloadLog: document.getElementById("downloadLogButton"),
   modeButtons: [...document.querySelectorAll("[data-mode]")],
 };
 
@@ -36,6 +41,12 @@ const checklistItems = [
   "試験官への準備完了申告",
 ];
 
+const postflightItems = [
+  "機体外観、プロペラ、機器取付状態の確認",
+  "バッテリーと機体の異常発熱、汚損の確認",
+  "飛行経路、飛行時間、異常の有無を記録",
+];
+
 const phases = {
   preflight: {
     title: "飛行前点検",
@@ -43,29 +54,59 @@ const phases = {
     line: "飛行前点検を開始してください。",
   },
   takeoff: {
-    title: "離陸",
+    title: "スクエア飛行: 離陸",
     hint: "高度3.5mまで上昇し、5秒間ホバリングしてください。",
     line: "離陸してください。高度3.5mでホバリングしてください。",
   },
   square: {
     title: "スクエア飛行",
-    hint: "指定リングを順番に通過し、機首を進行方向に向けてください。",
-    line: "スクエア飛行を開始してください。指定経路を維持してください。",
+    hint: "13m×5mのA-B-C-D-E-A経路を直線飛行してください。",
+    line: "スクエア飛行を開始してください。機首を進行方向へ向けてください。",
+  },
+  squareLanding: {
+    title: "スクエア飛行: 着陸",
+    hint: "A点へ戻り、流れを抑えて着陸してください。",
+    line: "スクエア飛行を終了し、A点へ着陸してください。",
+  },
+  eightTakeoff: {
+    title: "8の字飛行: 離陸",
+    hint: "高度1.5mまで上昇し、5秒間ホバリングしてください。",
+    line: "再離陸し、高度1.5mで5秒間ホバリングしてください。",
   },
   eight: {
     title: "8の字飛行",
-    hint: "高度1.5mを保ち、2つの円を連続して飛行してください。",
-    line: "高度1.5mへ移行し、8の字飛行を開始してください。",
+    hint: "直径約5mの2つの円を、機首を進行方向へ向けて連続2周してください。",
+    line: "8の字飛行を2周実施してください。",
+  },
+  eightLanding: {
+    title: "8の字飛行: 着陸",
+    hint: "A点へ戻り、安全に着陸してください。",
+    line: "8の字飛行を終了し、A点へ着陸してください。",
+  },
+  abnormalTakeoff: {
+    title: "異常事態飛行: 離陸",
+    hint: "位置安定OFFで高度3.5mまで上昇し、5秒間ホバリングしてください。",
+    line: "水平方向の位置安定機能をOFFにします。離陸してください。",
   },
   abnormal: {
     title: "異常事態の飛行",
-    hint: "水平安定が弱い状態で、指定経路を機首前向きのまま側方移動してください。",
-    line: "GNSS・ビジョンOFFを想定します。指定点まで側方移動してください。",
+    hint: "機首を前方へ固定し、指定経路を側方に1往復以上飛行してください。",
+    line: "機首方位を維持したまま、側方移動を1往復してください。",
+  },
+  emergencyHover: {
+    title: "緊急事態宣言",
+    hint: "その場で水平位置と高度3.5mを維持してください。",
+    line: "緊急事態を宣言します。その場でホバリングしてください。",
   },
   landing: {
     title: "緊急着陸",
     hint: "最短経路で緊急着陸地点へ移動し、流れを抑えて接地してください。",
     line: "緊急着陸してください。最短経路で指定地点へ降下してください。",
+  },
+  postflight: {
+    title: "飛行後点検・記録",
+    hint: "機体点検と飛行記録を正しい順序で完了してください。",
+    line: "飛行後点検と飛行記録を実施してください。",
   },
   result: {
     title: "結果",
@@ -74,19 +115,65 @@ const phases = {
   },
 };
 
-const phaseOrder = ["preflight", "takeoff", "square", "eight", "abnormal", "landing", "result"];
+const phaseMission = {
+  preflight: "preflight",
+  takeoff: "square",
+  square: "square",
+  squareLanding: "square",
+  eightTakeoff: "eight",
+  eight: "eight",
+  eightLanding: "eight",
+  abnormalTakeoff: "abnormal",
+  abnormal: "abnormal",
+  emergencyHover: "abnormal",
+  landing: "abnormal",
+  postflight: "postflight",
+  result: "result",
+};
 
-const squareTargets = [
-  { key: "squareA", x: 4.8, z: 8.5 },
-  { key: "squareB", x: -4.8, z: 8.5 },
-  { key: "squareC", x: -4.8, z: 0 },
-  { key: "squareD", x: 0, z: 0 },
+const missionOrder = ["preflight", "square", "eight", "abnormal", "postflight", "result"];
+const taskLimits = { square: 8 * 60, eight: 8 * 60, abnormal: 6 * 60 };
+
+const squarePath = [
+  { label: "A", x: 0, z: 0 },
+  { label: "B", x: 6.5, z: 0 },
+  { label: "C", x: 6.5, z: 5 },
+  { label: "D", x: -6.5, z: 5 },
+  { label: "E", x: -6.5, z: 0 },
+  { label: "A", x: 0, z: 0 },
+];
+
+const squareTargets = squarePath.slice(1).map((point, index) => ({
+  ...point,
+  key: `square${point.label}${index}`,
+}));
+
+const figureEightLap = [
+  { x: -2.5, z: 11 },
+  { x: -5, z: 8.5 },
+  { x: -2.5, z: 6 },
+  { x: 0, z: 8.5 },
+  { x: 2.5, z: 11 },
+  { x: 5, z: 8.5 },
+  { x: 2.5, z: 6 },
+  { x: 0, z: 8.5 },
+];
+
+const figureEightTargets = [
+  { x: 0, z: 8.5 },
+  ...figureEightLap,
+  ...figureEightLap,
 ];
 
 const abnormalTargets = [
-  { key: "abnormalA", x: 0, z: 8.5 },
-  { key: "abnormalB", x: -5.4, z: 8.5 },
+  { key: "abnormalSetup", x: 0, z: 5 },
+  { key: "abnormalOut", x: -5, z: 5 },
+  { key: "abnormalReturn", x: 0, z: 5 },
 ];
+
+const takeoffPoint = { x: 0, z: 0 };
+const emergencyLandingPoint = { x: -5.4, z: 2.2 };
+const wind = { speedMps: 2.6, directionDeg: 30 };
 
 const flightModel = {
   fixedStep: 1 / 120,
@@ -112,17 +199,25 @@ const state = {
   running: false,
   developerMode: true,
   checklistIndex: 0,
+  postflightIndex: 0,
   checklistMistakes: 0,
   startTime: 0,
   elapsed: 0,
   hoverTimer: 0,
   squareTimer: 0,
   squareIndex: 0,
-  eightProgress: 0,
+  eightIndex: 0,
   abnormalIndex: 0,
+  emergencyHoverTimer: 0,
+  taskStartTime: 0,
+  taskElapsed: 0,
+  taskTimes: {},
+  timeLimitExceeded: null,
   landingDrift: 0,
   altitudeErrorSquared: 0,
   altitudeSampleTime: 0,
+  headingErrorSquared: 0,
+  headingSampleTime: 0,
   hardLandingSpeed: 0,
   boundaryViolations: 0,
   responseDelays: [],
@@ -130,6 +225,9 @@ const state = {
   lastPhaseChange: performance.now(),
   physicsAccumulator: 0,
   simulationTime: 0,
+  batteryPct: 100,
+  flightRecords: [],
+  lastLogSecond: -1,
   command: {
     throttle: 0,
     forward: 0,
@@ -196,7 +294,7 @@ function initThreeWorld() {
   world.clock = new THREE.Clock();
   world.cameraLookTarget = new THREE.Vector3(0, 1, 0);
   world.cameraDesiredTarget = new THREE.Vector3(0, 1, 0);
-  world.pilotEye = new THREE.Vector3(0, 1.65, -4.8);
+  world.pilotEye = new THREE.Vector3(0, 2.05, -8.5);
   world.camera.position.copy(world.pilotEye);
 
   const hemi = new THREE.HemisphereLight(0xd8f0ff, 0x465044, 0.55);
@@ -287,6 +385,9 @@ function buildTrainingField() {
   const yellowMat = new THREE.MeshStandardMaterial({ color: 0xf2c94c, roughness: 0.6 });
   const redMat = new THREE.MeshStandardMaterial({ color: 0xef6f6c, roughness: 0.5 });
   const blueMat = new THREE.MeshStandardMaterial({ color: 0x4aa3df, roughness: 0.65 });
+  const routeMat = new THREE.MeshBasicMaterial({ color: 0xf2c94c });
+  const penaltyMat = new THREE.MeshBasicMaterial({ color: 0xe5a640, transparent: true, opacity: 0.75 });
+  const failMat = new THREE.MeshBasicMaterial({ color: 0xef6f6c, transparent: true, opacity: 0.75 });
 
   const runway = new THREE.Mesh(new THREE.PlaneGeometry(21, 13), padMat);
   runway.rotation.x = -Math.PI / 2;
@@ -301,14 +402,31 @@ function buildTrainingField() {
   addLine(THREE, 10.5, 0, 10.5, 13, lineMat);
   addLine(THREE, 0, 0, 0, 13, lineMat);
 
+  for (let index = 0; index < squarePath.length - 1; index += 1) {
+    const from = squarePath[index];
+    const to = squarePath[index + 1];
+    addLine(THREE, from.x, from.z, to.x, to.z, routeMat);
+  }
+  addRectangleBoundary(THREE, 16, 8, 2.5, penaltyMat);
+  addRectangleBoundary(THREE, 18, 10, 2.5, failMat);
+
   addLandingPad(THREE, 0, 0, "着陸");
   squareTargets.forEach((target) => addTargetRing(THREE, target.x, target.z, 0.8, yellowMat, target.key));
-  addPole(THREE, -2.8, 10, redMat);
-  addPole(THREE, 2.8, 10, redMat);
-  addTargetRing(THREE, -2.8, 10, 1.25, redMat, "left");
-  addTargetRing(THREE, 2.8, 10, 1.25, redMat, "right");
+  addPole(THREE, -2.5, 8.5, redMat);
+  addPole(THREE, 2.5, 8.5, redMat);
+  addTargetRing(THREE, -2.5, 8.5, 2.5, redMat, "left");
+  addTargetRing(THREE, 2.5, 8.5, 2.5, redMat, "right");
+  addTargetRing(THREE, 0, 8.5, 0.7, blueMat, "eightGuide");
   abnormalTargets.forEach((target) => addTargetRing(THREE, target.x, target.z, 0.9, blueMat, target.key));
-  addTargetRing(THREE, -5.4, 2.2, 1.1, redMat, "emergencyLanding");
+  addLine(THREE, -5, 5, 0, 5, blueMat);
+  addTargetRing(
+    THREE,
+    emergencyLandingPoint.x,
+    emergencyLandingPoint.z,
+    1.1,
+    redMat,
+    "emergencyLanding"
+  );
 
   addGate(THREE, -6.5, 4.5, blueMat);
   addGate(THREE, 6.5, 12.5, blueMat);
@@ -316,6 +434,15 @@ function buildTrainingField() {
   addFence(THREE);
   addBuildings(THREE);
   addTrees(THREE);
+}
+
+function addRectangleBoundary(THREE, width, depth, centerZ, material) {
+  const halfWidth = width / 2;
+  const halfDepth = depth / 2;
+  addLine(THREE, -halfWidth, centerZ - halfDepth, halfWidth, centerZ - halfDepth, material);
+  addLine(THREE, halfWidth, centerZ - halfDepth, halfWidth, centerZ + halfDepth, material);
+  addLine(THREE, halfWidth, centerZ + halfDepth, -halfWidth, centerZ + halfDepth, material);
+  addLine(THREE, -halfWidth, centerZ + halfDepth, -halfWidth, centerZ - halfDepth, material);
 }
 
 function addLine(THREE, x1, z1, x2, z2, material) {
@@ -588,6 +715,8 @@ function resizeRenderer() {
 function updateThreeWorld(dt) {
   if (!state.threeReady) return;
   const d = state.drone;
+  const observerDistance = phaseMission[state.phase] === "eight" ? 6.5 : 8.5;
+  world.pilotEye.set(0, 2.05, -observerDistance);
   world.drone.position.set(d.x, d.y + 0.18, d.z);
   world.drone.rotation.set(d.pitch, d.yaw, d.roll);
 
@@ -613,11 +742,17 @@ function updateThreeWorld(dt) {
   Object.entries(world.targetRings).forEach(([key, ring]) => {
     const currentSquare = squareTargets[state.squareIndex]?.key;
     const currentAbnormal = abnormalTargets[state.abnormalIndex]?.key;
+    const currentEight = figureEightTargets[state.eightIndex];
+    if (key === "eightGuide" && currentEight) {
+      ring.position.set(currentEight.x, 0.09, currentEight.z);
+    }
     const active =
       (state.phase === "square" && key === currentSquare) ||
-      (state.phase === "eight" && (key === "left" || key === "right")) ||
+      (state.phase === "eight" && key === "eightGuide") ||
       (state.phase === "abnormal" && key === currentAbnormal) ||
+      ((state.phase === "squareLanding" || state.phase === "eightLanding") && key === "landing") ||
       (state.phase === "landing" && key === "emergencyLanding");
+    ring.visible = key !== "eightGuide" || state.phase === "eight";
     ring.scale.setScalar(active ? 1 + Math.sin(performance.now() / 180) * 0.04 : 1);
   });
 
@@ -629,14 +764,24 @@ function updateThreeWorld(dt) {
 }
 
 function buildChecklist() {
+  ui.checklistTitle.textContent = "飛行前点検";
+  buildChecklistItems(checklistItems, confirmChecklist);
+}
+
+function buildPostflightChecklist() {
+  ui.checklistTitle.textContent = "飛行後点検・記録";
+  buildChecklistItems(postflightItems, confirmPostflight);
+}
+
+function buildChecklistItems(items, handler) {
   ui.checklist.innerHTML = "";
-  checklistItems.forEach((item, index) => {
+  items.forEach((item, index) => {
     const li = document.createElement("li");
     li.className = index === 0 ? "" : "locked";
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = item;
-    button.addEventListener("click", () => confirmChecklist(index));
+    button.addEventListener("click", () => handler(index));
     li.appendChild(button);
     ui.checklist.appendChild(li);
   });
@@ -659,6 +804,20 @@ function confirmChecklist(index) {
   }
 }
 
+function confirmPostflight(index) {
+  if (state.phase !== "postflight") return;
+  if (index !== state.postflightIndex) {
+    state.checklistMistakes += 1;
+    ui.examiner.textContent = "飛行後点検・記録の順序が違います。";
+    return;
+  }
+  const items = [...ui.checklist.children];
+  items[index].className = "done";
+  state.postflightIndex += 1;
+  if (items[state.postflightIndex]) items[state.postflightIndex].className = "";
+  if (state.postflightIndex === postflightItems.length) finishExam();
+}
+
 function setMode(mode) {
   state.mode = mode;
   ui.modeBadge.textContent = mode === "practice" ? "練習モード" : "本番モード";
@@ -668,16 +827,32 @@ function setMode(mode) {
 }
 
 function setPhase(phase) {
+  const previousMission = phaseMission[state.phase];
+  const nextMission = phaseMission[phase];
+  if (previousMission !== nextMission) {
+    if (taskLimits[previousMission] && state.taskStartTime) {
+      state.taskTimes[previousMission] = state.taskElapsed;
+    }
+    if (taskLimits[nextMission]) {
+      state.taskStartTime = performance.now();
+      state.taskElapsed = 0;
+    }
+  }
   state.phase = phase;
+  if (["takeoff", "eightTakeoff", "abnormalTakeoff", "emergencyHover"].includes(phase)) {
+    state.hoverTimer = 0;
+  }
   state.lastPhaseChange = performance.now();
   state.respondedPhase = null;
   const copy = phases[phase];
   ui.phaseTitle.textContent = copy.title;
   ui.phaseHint.textContent = copy.hint;
   ui.examiner.textContent = copy.line;
+  const missionIndex = missionOrder.indexOf(nextMission);
   ui.missions.forEach((item) => {
-    item.classList.toggle("current", item.dataset.phase === phase);
-    item.classList.toggle("done", phaseOrder.indexOf(item.dataset.phase) < phaseOrder.indexOf(phase));
+    const itemIndex = missionOrder.indexOf(item.dataset.mission);
+    item.classList.toggle("current", item.dataset.mission === nextMission);
+    item.classList.toggle("done", itemIndex < missionIndex);
   });
 }
 
@@ -685,22 +860,33 @@ function reset() {
   state.phase = "preflight";
   state.running = false;
   state.checklistIndex = 0;
+  state.postflightIndex = 0;
   state.checklistMistakes = 0;
   state.elapsed = 0;
   state.hoverTimer = 0;
   state.squareTimer = 0;
   state.squareIndex = 0;
-  state.eightProgress = 0;
+  state.eightIndex = 0;
   state.abnormalIndex = 0;
+  state.emergencyHoverTimer = 0;
+  state.taskStartTime = 0;
+  state.taskElapsed = 0;
+  state.taskTimes = {};
+  state.timeLimitExceeded = null;
   state.landingDrift = 0;
   state.altitudeErrorSquared = 0;
   state.altitudeSampleTime = 0;
+  state.headingErrorSquared = 0;
+  state.headingSampleTime = 0;
   state.hardLandingSpeed = 0;
   state.boundaryViolations = 0;
   state.responseDelays = [];
   state.respondedPhase = null;
   state.physicsAccumulator = 0;
   state.simulationTime = 0;
+  state.batteryPct = 100;
+  state.flightRecords = [];
+  state.lastLogSecond = -1;
   Object.assign(state.command, { throttle: 0, forward: 0, strafe: 0, yaw: 0 });
   Object.assign(state.drone, {
     x: 0,
@@ -718,6 +904,7 @@ function reset() {
     thrustNewtons: 0,
   });
   ui.resultPanel.hidden = true;
+  ui.downloadLog.disabled = true;
   ui.start.disabled = true;
   ui.start.textContent = "試験を開始";
   buildChecklist();
@@ -735,7 +922,10 @@ function startExam() {
   }
   state.running = true;
   state.startTime = performance.now();
+  state.taskStartTime = 0;
   state.responseDelays = [];
+  state.flightRecords = [];
+  state.lastLogSecond = -1;
   ui.start.textContent = "試験中";
   ui.start.disabled = true;
   setPhase("takeoff");
@@ -827,7 +1017,7 @@ function updatePhysics(dt, rawInput) {
     return;
   }
 
-  const positionHold = state.phase !== "abnormal" && state.phase !== "landing";
+  const positionHold = !["abnormalTakeoff", "abnormal", "emergencyHover", "landing"].includes(state.phase);
   const cosYaw = Math.cos(d.yaw);
   const sinYaw = Math.sin(d.yaw);
   const localRightVelocity = d.vx * cosYaw - d.vz * sinYaw;
@@ -946,15 +1136,27 @@ function updatePhysics(dt, rawInput) {
     if (d.y >= 6) d.vy = Math.min(0, d.vy);
   }
 
+  state.batteryPct = Math.max(0, state.batteryPct - dt * 0.045);
   const jitter = Math.abs(d.y - targetAltitude());
   const altitudeCanBeScored =
-    (state.phase === "takeoff" && d.y > 3) ||
-    state.phase === "square" ||
-    state.phase === "eight" ||
-    state.phase === "abnormal";
+    (["takeoff", "abnormalTakeoff"].includes(state.phase) && d.y > 3) ||
+    (state.phase === "eightTakeoff" && d.y > 1.2) ||
+    ["square", "eight", "abnormal", "emergencyHover"].includes(state.phase);
   if (altitudeCanBeScored) {
     state.altitudeErrorSquared += jitter * jitter * dt;
     state.altitudeSampleTime += dt;
+  }
+
+  const navigationTarget = currentNavigationTarget();
+  const horizontalSpeed = Math.hypot(d.vx, d.vz);
+  if (navigationTarget && horizontalSpeed > 0.25) {
+    const expectedYaw =
+      state.phase === "abnormal"
+        ? 0
+        : Math.atan2(navigationTarget.x - d.x, navigationTarget.z - d.z);
+    const headingError = angleDifference(d.yaw, expectedYaw);
+    state.headingErrorSquared += headingError * headingError * dt;
+    state.headingSampleTime += dt;
   }
 }
 
@@ -962,6 +1164,16 @@ function updateMission(dt) {
   if (!state.running) return;
   const d = state.drone;
   state.elapsed = (performance.now() - state.startTime) / 1000;
+  const mission = phaseMission[state.phase];
+  if (taskLimits[mission]) {
+    state.taskElapsed = (performance.now() - state.taskStartTime) / 1000;
+    if (state.taskElapsed > taskLimits[mission] && !state.timeLimitExceeded) {
+      state.timeLimitExceeded = mission;
+      finishExam();
+      return;
+    }
+  }
+  recordTelemetry();
 
   if (state.phase === "takeoff") {
     if (Math.abs(d.y - 3.5) < 0.22 && Math.hypot(d.vx, d.vz, d.vy) < 0.45) {
@@ -984,21 +1196,55 @@ function updateMission(dt) {
       state.squareIndex += 1;
       state.squareTimer = 0;
       if (state.squareIndex >= squareTargets.length) {
-        setPhase("eight");
+        setPhase("squareLanding");
       } else {
-        ui.examiner.textContent = `次のスクエア地点へ移動してください。${state.squareIndex + 1}/${squareTargets.length}`;
+        const nextPoint = squareTargets[state.squareIndex];
+        ui.examiner.textContent = `次は${nextPoint.label}点です。${state.squareIndex + 1}/${squareTargets.length}`;
       }
     }
   }
 
-  if (state.phase === "eight") {
-    const left = Math.hypot(d.x + 2.8, d.z - 10);
-    const right = Math.hypot(d.x - 2.8, d.z - 10);
-    if (Math.abs(d.y - 1.5) < 0.45) {
-      if (state.eightProgress === 0 && left < 1.3) state.eightProgress = 1;
-      if (state.eightProgress === 1 && right < 1.3) state.eightProgress = 2;
-      if (state.eightProgress === 2 && Math.hypot(d.x, d.z - 8) < 1.1) setPhase("abnormal");
+  if (state.phase === "squareLanding" && isLandedAt(takeoffPoint)) {
+    setPhase("eightTakeoff");
+  }
+
+  if (state.phase === "eightTakeoff") {
+    if (Math.abs(d.y - 1.5) < 0.2 && Math.hypot(d.vx, d.vz, d.vy) < 0.4) {
+      state.hoverTimer += dt;
+    } else {
+      state.hoverTimer = Math.max(0, state.hoverTimer - dt);
     }
+    if (state.hoverTimer > 5) setPhase("eight");
+  }
+
+  if (state.phase === "eight") {
+    const target = figureEightTargets[state.eightIndex];
+    if (
+      target &&
+      Math.hypot(d.x - target.x, d.z - target.z) < 1 &&
+      Math.abs(d.y - 1.5) < 0.4
+    ) {
+      state.eightIndex += 1;
+      if (state.eightIndex >= figureEightTargets.length) {
+        setPhase("eightLanding");
+      } else {
+        const completedLaps = Math.max(0, Math.floor((state.eightIndex - 1) / figureEightLap.length));
+        ui.examiner.textContent = `8の字飛行を継続してください。完了 ${completedLaps}/2周`;
+      }
+    }
+  }
+
+  if (state.phase === "eightLanding" && isLandedAt(takeoffPoint)) {
+    setPhase("abnormalTakeoff");
+  }
+
+  if (state.phase === "abnormalTakeoff") {
+    if (Math.abs(d.y - 3.5) < 0.25 && Math.hypot(d.vx, d.vz, d.vy) < 0.5) {
+      state.hoverTimer += dt;
+    } else {
+      state.hoverTimer = Math.max(0, state.hoverTimer - dt);
+    }
+    if (state.hoverTimer > 5) setPhase("abnormal");
   }
 
   if (state.phase === "abnormal") {
@@ -1007,21 +1253,45 @@ function updateMission(dt) {
     if (target && distance < 0.9 && Math.abs(d.y - 3.5) < 0.55) {
       state.abnormalIndex += 1;
       if (state.abnormalIndex >= abnormalTargets.length) {
-        setPhase("landing");
+        setPhase("emergencyHover");
       } else {
-        ui.examiner.textContent = "機首前向きのまま、次の側方移動点へ進んでください。";
+        ui.examiner.textContent =
+          state.abnormalIndex === 1
+            ? "機首前向きのまま側方へ移動してください。"
+            : "同じ経路を側方移動で戻ってください。";
       }
     }
+  }
+
+  if (state.phase === "emergencyHover") {
+    if (Math.abs(d.y - 3.5) < 0.45 && Math.hypot(d.vx, d.vz, d.vy) < 0.5) {
+      state.emergencyHoverTimer += dt;
+    } else {
+      state.emergencyHoverTimer = Math.max(0, state.emergencyHoverTimer - dt);
+    }
+    if (state.emergencyHoverTimer > 3) setPhase("landing");
   }
 
   if (state.phase === "landing") {
     if (d.y < 1.2) {
       state.landingDrift = Math.max(state.landingDrift, Math.hypot(d.vx, d.vz));
     }
-    if (Math.hypot(d.x + 5.4, d.z - 2.2) < 0.9 && d.y < 0.08 && Math.hypot(d.vx, d.vz) < 0.55) {
-      finishExam();
+    if (isLandedAt(emergencyLandingPoint)) {
+      state.running = false;
+      setPhase("postflight");
+      buildPostflightChecklist();
+      ui.start.textContent = "飛行後点検";
     }
   }
+}
+
+function isLandedAt(point) {
+  const d = state.drone;
+  return (
+    Math.hypot(d.x - point.x, d.z - point.z) < 0.9 &&
+    d.y < 0.08 &&
+    Math.hypot(d.vx, d.vz) < 0.55
+  );
 }
 
 function finishExam() {
@@ -1033,7 +1303,12 @@ function finishExam() {
     state.altitudeSampleTime > 0
       ? Math.sqrt(state.altitudeErrorSquared / state.altitudeSampleTime)
       : 0;
+  const headingRms =
+    state.headingSampleTime > 0
+      ? Math.sqrt(state.headingErrorSquared / state.headingSampleTime)
+      : 0;
   const fatalLanding = state.hardLandingSpeed >= 3;
+  const fatalTime = Boolean(state.timeLimitExceeded);
 
   if (state.checklistMistakes > 0) {
     score -= state.checklistMistakes * 8;
@@ -1046,6 +1321,10 @@ function finishExam() {
   if (state.squareIndex < squareTargets.length) {
     score -= 14;
     feedback.push("スクエア飛行の指定経路を完了できていません。次のリングを見失わないよう、進行方向と高度を保ってください。");
+  }
+  if (state.eightIndex < figureEightTargets.length) {
+    score -= 14;
+    feedback.push("8の字飛行を連続2周完了できていません。直径約5mの経路を一定高度で反復してください。");
   }
   if (state.abnormalIndex < abnormalTargets.length) {
     score -= 14;
@@ -1063,14 +1342,23 @@ function finishExam() {
     score -= Math.min(20, state.boundaryViolations * 5);
     feedback.push("飛行可能範囲を逸脱しています。減速開始位置と機体の慣性を意識してください。");
   }
+  if (headingRms > 25 * Math.PI / 180) {
+    score -= 12;
+    feedback.push(`機首方位の平均誤差が${(headingRms * 180 / Math.PI).toFixed(0)}度です。進行方向への機首合わせを早めてください。`);
+  }
   const avgResponse = average(state.responseDelays);
   if (avgResponse > 2.8) {
     score -= 10;
     feedback.push("指示から操作開始までに時間がかかっています。次の課題姿勢を早めに準備してください。");
   }
-  if (state.elapsed > 180) {
-    score -= 10;
-    feedback.push("所要時間が長めです。停止位置の手前から減速を始めてください。");
+  if (fatalTime) {
+    score = 0;
+    const taskName = state.timeLimitExceeded === "square"
+      ? "スクエア飛行"
+      : state.timeLimitExceeded === "eight"
+        ? "8の字飛行"
+        : "異常事態飛行";
+    feedback.push(`${taskName}の制限時間を超過しました。各科目の経路と減速位置を事前に固定してください。`);
   }
   if (feedback.length === 0) {
     feedback.push("大きな減点傾向はありません。次は本番モードで途中表示なしに挑戦してください。");
@@ -1078,10 +1366,62 @@ function finishExam() {
 
   score = Math.max(0, Math.round(score));
   ui.resultPanel.hidden = false;
-  ui.passFail.textContent = score >= 70 && !fatalLanding ? "合格" : "不合格";
+  ui.downloadLog.disabled = state.flightRecords.length === 0;
+  ui.passFail.textContent = score >= 70 && !fatalLanding && !fatalTime ? "合格" : "不合格";
   ui.score.textContent = `${score} / 100`;
   ui.finalTime.textContent = formatTime(state.elapsed);
   ui.feedback.innerHTML = feedback.map((item) => `<li>${item}</li>`).join("");
+}
+
+function recordTelemetry() {
+  const second = Math.floor(state.elapsed);
+  if (second === state.lastLogSecond) return;
+  state.lastLogSecond = second;
+  const d = state.drone;
+  const positionHold = !["abnormalTakeoff", "abnormal", "emergencyHover", "landing"].includes(state.phase);
+  state.flightRecords.push({
+    scenario_id: phaseMission[state.phase] === "abnormal" ? "S01_SENSOR_FAIL" : "N01_NORMAL",
+    elapsed_s: second,
+    timestamp_jst: formatJstTimestamp(new Date()),
+    phase: state.phase,
+    x_east_m: Number(d.x.toFixed(3)),
+    y_north_m: Number(d.z.toFixed(3)),
+    z_up_m: Number(d.y.toFixed(3)),
+    yaw_deg: Number((d.yaw * 180 / Math.PI).toFixed(2)),
+    pitch_deg: Number((d.pitch * 180 / Math.PI).toFixed(2)),
+    roll_deg: Number((d.roll * 180 / Math.PI).toFixed(2)),
+    ground_speed_mps: Number(Math.hypot(d.vx, d.vz).toFixed(3)),
+    vertical_speed_mps: Number(d.vy.toFixed(3)),
+    flight_mode: positionHold ? "GNSS_VISION" : "ATTI",
+    pos_hold_enabled: positionHold,
+    link_state: "OK",
+    sensor_status: positionHold ? "NOMINAL" : "POSITION_HOLD_OFF",
+    battery_pct: Number(state.batteryPct.toFixed(1)),
+    wind_speed_mps: wind.speedMps,
+    wind_dir_deg: wind.directionDeg,
+  });
+}
+
+function downloadFlightLog() {
+  if (!state.flightRecords.length) return;
+  const payload = {
+    metadata: {
+      document_title: "二等無人航空機実地試験 3D再現ログ",
+      geodetic_frame: "LOCAL_ENU",
+      origin: { name: "A点離着陸基準点", x_east_m: 0, y_north_m: 0, z_up_m: 0 },
+      official_course_limits_s: taskLimits,
+      note: "位置・センサー周波数は3D再現用の仮定です。",
+    },
+    task_times_s: state.taskTimes,
+    flight_records: state.flightRecords,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `drone-test-log-${Date.now()}.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 function renderReadouts() {
@@ -1089,6 +1429,13 @@ function renderReadouts() {
   ui.altitude.textContent = `${d.y.toFixed(1)}m`;
   ui.speed.textContent = `${Math.hypot(d.vx, d.vz, d.vy).toFixed(1)}m/s`;
   ui.time.textContent = formatTime(state.elapsed);
+  const mission = phaseMission[state.phase];
+  const remaining = taskLimits[mission] ? Math.max(0, taskLimits[mission] - state.taskElapsed) : null;
+  ui.taskTime.textContent = remaining === null ? "--:--" : formatTime(remaining);
+  ui.battery.textContent = `${state.batteryPct.toFixed(0)}%`;
+  const positionHold = !["abnormalTakeoff", "abnormal", "emergencyHover", "landing"].includes(state.phase);
+  ui.stability.textContent = positionHold ? "位置安定 ON" : "位置安定 OFF";
+  ui.stability.classList.toggle("warning", !positionHold);
 
   if (state.mode === "exam" && state.running) {
     ui.phaseHint.textContent = "課題終了まで減点内容は表示されません。";
@@ -1131,10 +1478,28 @@ function formatTime(seconds) {
   return `${min}:${sec}`;
 }
 
+function formatJstTimestamp(date) {
+  const shifted = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return shifted.toISOString().replace("Z", "+09:00");
+}
+
+function angleDifference(a, b) {
+  return Math.atan2(Math.sin(a - b), Math.cos(a - b));
+}
+
+function currentNavigationTarget() {
+  if (state.phase === "square") return squareTargets[state.squareIndex] || null;
+  if (state.phase === "eight") return figureEightTargets[state.eightIndex] || null;
+  if (state.phase === "abnormal") return abnormalTargets[state.abnormalIndex] || null;
+  if (state.phase === "squareLanding" || state.phase === "eightLanding") return takeoffPoint;
+  if (state.phase === "landing") return emergencyLandingPoint;
+  return null;
+}
+
 function targetAltitude() {
-  if (state.phase === "eight") return 1.5;
-  if (state.phase === "landing") return 0;
-  if (state.phase === "preflight" || state.phase === "result") return state.drone.y;
+  if (["eightTakeoff", "eight"].includes(state.phase)) return 1.5;
+  if (["squareLanding", "eightLanding", "landing"].includes(state.phase)) return 0;
+  if (["preflight", "postflight", "result"].includes(state.phase)) return state.drone.y;
   return 3.5;
 }
 
@@ -1143,6 +1508,7 @@ ui.modeButtons.forEach((button) => {
 });
 ui.start.addEventListener("click", startExam);
 ui.reset.addEventListener("click", reset);
+ui.downloadLog.addEventListener("click", downloadFlightLog);
 ui.developerMode.addEventListener("click", () => {
   state.developerMode = !state.developerMode;
   ui.developerMode.classList.toggle("active", state.developerMode);

@@ -109,6 +109,26 @@ select {
   white-space: nowrap;
 }
 
+.telemetry-status {
+  top: 78px;
+  right: 18px;
+  display: flex;
+  gap: 12px;
+  padding: 9px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.telemetry-status strong,
+.telemetry-status #stabilityReadout {
+  color: var(--text);
+}
+
+.telemetry-status #stabilityReadout.warning {
+  color: var(--danger);
+  font-weight: 800;
+}
+
 .top-right span {
   color: var(--muted);
 }
@@ -386,6 +406,13 @@ select {
     right: auto;
     top: auto;
     bottom: 82px;
+  }
+
+  .sim-stage > .telemetry-status {
+    top: 142px;
+    bottom: auto;
+    right: auto;
+    left: 18px;
   }
 }
 

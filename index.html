@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ドローン国家資格 実地試験対策シミュレーター</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=20260610" />
   </head>
   <body>
     <div class="orientation-warning">
@@ -24,6 +24,12 @@
           <span>高度 <strong id="altitudeReadout">0.0m</strong></span>
           <span>速度 <strong id="speedReadout">0.0m/s</strong></span>
           <span>経過 <strong id="timeReadout">00:00</strong></span>
+          <span>科目残り <strong id="taskTimeReadout">--:--</strong></span>
+        </div>
+        <div class="hud telemetry-status">
+          <span id="stabilityReadout">位置安定 ON</span>
+          <span>BAT <strong id="batteryReadout">100%</strong></span>
+          <span>風速 2.6m/s</span>
         </div>
         <div class="hud bottom-center" id="examinerLine">
           飛行前点検を開始してください。
@@ -67,20 +73,19 @@
         </section>
 
         <section class="panel-section" id="checklistPanel">
-          <h2>飛行前点検</h2>
+          <h2 id="checklistTitle">飛行前点検</h2>
           <ol class="checklist" id="checklist"></ol>
         </section>
 
         <section class="panel-section">
           <h2>進行</h2>
           <ol class="mission-list" id="missionList">
-            <li data-phase="preflight" class="current">飛行前点検</li>
-            <li data-phase="takeoff">離陸・3.5mホバリング</li>
-            <li data-phase="square">スクエア飛行</li>
-            <li data-phase="eight">8の字飛行</li>
-            <li data-phase="abnormal">異常事態の飛行</li>
-            <li data-phase="landing">緊急着陸</li>
-            <li data-phase="result">結果</li>
+            <li data-mission="preflight" class="current">飛行前点検</li>
+            <li data-mission="square">スクエア飛行（8分）</li>
+            <li data-mission="eight">8の字飛行 2周（8分）</li>
+            <li data-mission="abnormal">位置安定OFF・緊急着陸（6分）</li>
+            <li data-mission="postflight">飛行後点検・記録</li>
+            <li data-mission="result">結果</li>
           </ol>
           <button id="startButton" class="primary-button">試験を開始</button>
           <button id="resetButton" class="secondary-button">リセット</button>
@@ -94,6 +99,9 @@
             <div><dt>所要時間</dt><dd id="finalTime">-</dd></div>
           </dl>
           <ul id="feedbackList"></ul>
+          <button id="downloadLogButton" class="secondary-button" disabled>
+            1Hz飛行ログをダウンロード
+          </button>
         </section>
       </aside>
     </main>
@@ -106,6 +114,6 @@
         }
       }
     </script>
-    <script type="module" src="app.js"></script>
+    <script type="module" src="app.js?v=20260610"></script>
   </body>
 </html>
