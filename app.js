@@ -196,7 +196,8 @@ function initThreeWorld() {
   world.clock = new THREE.Clock();
   world.cameraLookTarget = new THREE.Vector3(0, 1, 0);
   world.cameraDesiredTarget = new THREE.Vector3(0, 1, 0);
-  world.pilotEye = new THREE.Vector3(-7.8, 2.05, -4.4);
+  world.pilotEye = new THREE.Vector3(0, 1.65, -4.8);
+  world.camera.position.copy(world.pilotEye);
 
   const hemi = new THREE.HemisphereLight(0xd8f0ff, 0x465044, 0.55);
   world.scene.add(hemi);
