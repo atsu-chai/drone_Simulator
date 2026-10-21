@@ -1,0 +1,9 @@
+check_id,scenario,expected,actual,status,evidence,reviewer,date
+A01,通し練習10回,10回完走し保存と出力が一致,,not_run,,,
+A02,初見利用者3人,全員が口頭補助なしに最初の練習を終了,,not_run,,,
+A03,実機比較,操縦と視認性の重大指摘を解消,,not_run,,,
+A04,実コントローラー,軸方向と中立と切断復帰を確認,,not_run,,,
+A05,30fpsと60fps,同じ入力の進行と判定が一致,,not_run,,,
+A06,Stripeテスト購入更新解約再契約,権限と請求が一致,,not_run,,,
+A07,重複遅延通知,過去状態への巻き戻りと二重反映なし,,automated_only,,,
+A08,公式対応表,コース図と条件例外を独立指導者が確認,,not_run,,,

@@ -416,7 +416,7 @@ select {
   }
 }
 
-@media (orientation: portrait) {
+@media (orientation: portrait) and (pointer: coarse) {
   .orientation-warning {
     position: fixed;
     inset: 0;

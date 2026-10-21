@@ -1,3 +1,4 @@
+import { versions, course, squarePath, createEvaluation, evaluateSample, normalizedAxis, calibrationValid, subjects, historyStore, routeDistance } from "./src/training.js";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
@@ -108,6 +109,7 @@ const phases = {
     hint: "機体点検と飛行記録を正しい順序で完了してください。",
     line: "飛行後点検と飛行記録を実施してください。",
   },
+  demoLanding: { title: "無料体験：着陸", hint: "A点へ静かに着陸してください。", line: "ホバリング完了。A点へ着陸してください。" },
   result: {
     title: "結果",
     hint: "試験結果を確認してください。",
@@ -128,20 +130,12 @@ const phaseMission = {
   emergencyHover: "abnormal",
   landing: "abnormal",
   postflight: "postflight",
+  demoLanding: "square",
   result: "result",
 };
 
 const missionOrder = ["preflight", "square", "eight", "abnormal", "postflight", "result"];
 const taskLimits = { square: 8 * 60, eight: 8 * 60, abnormal: 6 * 60 };
-
-const squarePath = [
-  { label: "A", x: 0, z: 0 },
-  { label: "B", x: 6.5, z: 0 },
-  { label: "C", x: 6.5, z: 5 },
-  { label: "D", x: -6.5, z: 5 },
-  { label: "E", x: -6.5, z: 0 },
-  { label: "A", x: 0, z: 0 },
-];
 
 const squareTargets = squarePath.slice(1).map((point, index) => ({
   ...point,
@@ -173,7 +167,7 @@ const abnormalTargets = [
 
 const takeoffPoint = { x: 0, z: 0 };
 const emergencyLandingPoint = { x: -5.4, z: 2.2 };
-const wind = { speedMps: 2.6, directionDeg: 30 };
+const wind = { speedMps: 0, directionDeg: 30 };
 
 const flightModel = {
   fixedStep: 1 / 120,
@@ -197,7 +191,12 @@ const state = {
   mode: "practice",
   phase: "preflight",
   running: false,
-  developerMode: true,
+  paused: false,
+  subject: "demo",
+  calibration: null,
+  evaluation: createEvaluation(),
+  interrupted: false,
+  developerMode: false,
   checklistIndex: 0,
   postflightIndex: 0,
   checklistMistakes: 0,
@@ -222,7 +221,7 @@ const state = {
   boundaryViolations: 0,
   responseDelays: [],
   respondedPhase: null,
-  lastPhaseChange: performance.now(),
+  lastPhaseChange: 0,
   physicsAccumulator: 0,
   simulationTime: 0,
   batteryPct: 100,
@@ -256,6 +255,8 @@ const state = {
 
 const world = {
   renderer: null,
+  boundaryGroup: null,
+  boundaryKey: null,
   scene: null,
   camera: null,
   drone: null,
@@ -407,8 +408,8 @@ function buildTrainingField() {
     const to = squarePath[index + 1];
     addLine(THREE, from.x, from.z, to.x, to.z, routeMat);
   }
-  addRectangleBoundary(THREE, 16, 8, 2.5, penaltyMat);
-  addRectangleBoundary(THREE, 18, 10, 2.5, failMat);
+
+
 
   addLandingPad(THREE, 0, 0, "着陸");
   squareTargets.forEach((target) => addTargetRing(THREE, target.x, target.z, 0.8, yellowMat, target.key));
@@ -714,6 +715,7 @@ function resizeRenderer() {
 
 function updateThreeWorld(dt) {
   if (!state.threeReady) return;
+  updateBoundaryDisplay();
   const d = state.drone;
   const observerDistance = phaseMission[state.phase] === "eight" ? 6.5 : 8.5;
   world.pilotEye.set(0, 2.05, -observerDistance);
@@ -752,8 +754,8 @@ function updateThreeWorld(dt) {
       (state.phase === "abnormal" && key === currentAbnormal) ||
       ((state.phase === "squareLanding" || state.phase === "eightLanding") && key === "landing") ||
       (state.phase === "landing" && key === "emergencyLanding");
-    ring.visible = key !== "eightGuide" || state.phase === "eight";
-    ring.scale.setScalar(active ? 1 + Math.sin(performance.now() / 180) * 0.04 : 1);
+    ring.visible = state.mode === "practice" && (key !== "eightGuide" || state.phase === "eight");
+    ring.scale.setScalar(active ? 1 + Math.sin(trainingNow() / 180) * 0.04 : 1);
   });
 
   world.camera.position.lerp(world.pilotEye, 1 - Math.exp(-dt * 5));
@@ -819,6 +821,7 @@ function confirmPostflight(index) {
 }
 
 function setMode(mode) {
+  if (state.running) return;
   state.mode = mode;
   ui.modeBadge.textContent = mode === "practice" ? "練習モード" : "本番モード";
   ui.modeButtons.forEach((button) => {
@@ -830,11 +833,11 @@ function setPhase(phase) {
   const previousMission = phaseMission[state.phase];
   const nextMission = phaseMission[phase];
   if (previousMission !== nextMission) {
-    if (taskLimits[previousMission] && state.taskStartTime) {
+    if (taskLimits[previousMission]) {
       state.taskTimes[previousMission] = state.taskElapsed;
     }
     if (taskLimits[nextMission]) {
-      state.taskStartTime = performance.now();
+      state.taskStartTime = trainingNow();
       state.taskElapsed = 0;
     }
   }
@@ -842,12 +845,15 @@ function setPhase(phase) {
   if (["takeoff", "eightTakeoff", "abnormalTakeoff", "emergencyHover"].includes(phase)) {
     state.hoverTimer = 0;
   }
-  state.lastPhaseChange = performance.now();
+  state.lastPhaseChange = trainingNow();
   state.respondedPhase = null;
   const copy = phases[phase];
   ui.phaseTitle.textContent = copy.title;
   ui.phaseHint.textContent = copy.hint;
   ui.examiner.textContent = copy.line;
+  if(document.getElementById("voiceEnabled").checked && "speechSynthesis" in window) {
+    speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(copy.line);utterance.lang="ja-JP";speechSynthesis.speak(utterance);
+  }
   const missionIndex = missionOrder.indexOf(nextMission);
   ui.missions.forEach((item) => {
     const itemIndex = missionOrder.indexOf(item.dataset.mission);
@@ -857,8 +863,19 @@ function setPhase(phase) {
 }
 
 function reset() {
+  if(state.running && state.elapsed>0) {
+    state.interrupted=true;
+    state.evaluation.events.push({type:"interrupted",points:0,phase:state.phase,time:state.elapsed,position:{x:state.drone.x,z:state.drone.z}});
+    finishExam();
+  }
   state.phase = "preflight";
   state.running = false;
+  state.paused = false;
+  state.interrupted = false;
+  state.evaluation = createEvaluation();
+  state.emergencyHoverPoint=null;
+  state.arc = { key: null, angle: null, travel: 0 };
+  document.getElementById("pauseButton").hidden = true;
   state.checklistIndex = 0;
   state.postflightIndex = 0;
   state.checklistMistakes = 0;
@@ -911,7 +928,15 @@ function reset() {
   setPhase("preflight");
 }
 
-function startExam() {
+async function startExam() {
+  if(state.running) return;
+  if(state.subject!=="demo") {
+    ui.start.disabled=true;
+    try {const status=await fetch("/api/status").then(r=>r.json());accessGranted=Boolean(status.access);
+      if(accessGranted) {const {createMission}=await import("./src/premium-mission.js");premiumMission=createMission({state,phaseMission,taskLimits,trainingNow,recordTelemetry,evaluateSample,finishExam,isLandedAt,takeoffPoint,setPhase,squareTargets,figureEightTargets,figureEightLap,course,angleDifference,abnormalTargets,emergencyLandingPoint,ui,buildPostflightChecklist});}
+    } catch {accessGranted=false;} finally {ui.start.disabled=false;}
+  }
+  if(state.subject!=="demo" && !accessGranted) { ui.examiner.textContent="この科目は検証参加者・契約者向けです。アカウント画面で利用状況を確認してください。";return; }
   if (state.checklistIndex < checklistItems.length) {
     ui.examiner.textContent = "飛行前点検が完了していません。";
     return;
@@ -920,15 +945,18 @@ function startExam() {
     ui.examiner.textContent = "外部コントローラーを接続してください。開発者モードではキーボード操作で開始できます。";
     return;
   }
+  if (!state.threeReady) { ui.examiner.textContent = "3D画面の準備が完了していません。再読み込みしてください。"; return; }
+  if (!state.developerMode && !state.calibration) { ui.examiner.textContent = "開始前に入力確認と中立校正をしてください。"; return; }
   state.running = true;
-  state.startTime = performance.now();
+  document.getElementById("pauseButton").hidden = false;
+  state.startTime = trainingNow();
   state.taskStartTime = 0;
   state.responseDelays = [];
   state.flightRecords = [];
   state.lastLogSecond = -1;
   ui.start.textContent = "試験中";
   ui.start.disabled = true;
-  setPhase("takeoff");
+  setPhase(subjects[state.subject].phase);
 }
 
 function getGamepad() {
@@ -955,7 +983,7 @@ function readInput() {
   const pad = getGamepad();
   const input = { throttle: 0, forward: 0, strafe: 0, yaw: 0 };
   if (pad) {
-    const axes = pad.axes.map((value) => Math.abs(value) < 0.08 ? 0 : value);
+    const axes = pad.axes.map((value, index) => normalizedAxis(value, state.calibration?.axes[index] || 0));
     const preset = ui.preset.value;
     if (preset === "mode2") {
       input.throttle = -(axes[1] || 0);
@@ -984,7 +1012,8 @@ function readInput() {
 
 function updatePhysics(dt, rawInput) {
   const d = state.drone;
-  state.simulationTime += dt;
+  if (state.paused) return;
+  if (state.running) state.simulationTime += dt;
   const commandResponse = 1 - Math.exp(-dt * 10);
   const throttleTarget = state.running ? rawInput.throttle : 0;
   const forwardTarget = state.running ? rawInput.forward : 0;
@@ -1002,7 +1031,7 @@ function updatePhysics(dt, rawInput) {
     Math.abs(rawInput.strafe) +
     Math.abs(rawInput.yaw) > 0.12;
   if (state.running && hasPilotInput && state.respondedPhase !== state.phase) {
-    state.responseDelays.push((performance.now() - state.lastPhaseChange) / 1000);
+    state.responseDelays.push((trainingNow() - state.lastPhaseChange) / 1000);
     state.respondedPhase = state.phase;
   }
 
@@ -1161,128 +1190,18 @@ function updatePhysics(dt, rawInput) {
 }
 
 function updateMission(dt) {
-  if (!state.running) return;
-  const d = state.drone;
-  state.elapsed = (performance.now() - state.startTime) / 1000;
-  const mission = phaseMission[state.phase];
-  if (taskLimits[mission]) {
-    state.taskElapsed = (performance.now() - state.taskStartTime) / 1000;
-    if (state.taskElapsed > taskLimits[mission] && !state.timeLimitExceeded) {
-      state.timeLimitExceeded = mission;
-      finishExam();
-      return;
-    }
-  }
+  if(state.subject!=="demo") { if(premiumMission) premiumMission(dt); return; }
+  if(!state.running || state.paused) return;
+  state.elapsed=(trainingNow()-state.startTime)/1000;
+  state.taskElapsed=state.elapsed;
   recordTelemetry();
-
-  if (state.phase === "takeoff") {
-    if (Math.abs(d.y - 3.5) < 0.22 && Math.hypot(d.vx, d.vz, d.vy) < 0.45) {
-      state.hoverTimer += dt;
-    } else {
-      state.hoverTimer = Math.max(0, state.hoverTimer - dt);
-    }
-    if (state.hoverTimer > 5) setPhase("square");
-  }
-
-  if (state.phase === "square") {
-    const target = squareTargets[state.squareIndex];
-    const distance = target ? Math.hypot(d.x - target.x, d.z - target.z) : 0;
-    if (target && distance < 0.9 && Math.abs(d.y - 3.5) < 0.45) {
-      state.squareTimer += dt;
-    } else {
-      state.squareTimer = Math.max(0, state.squareTimer - dt * 0.5);
-    }
-    if (state.squareTimer > 0.8) {
-      state.squareIndex += 1;
-      state.squareTimer = 0;
-      if (state.squareIndex >= squareTargets.length) {
-        setPhase("squareLanding");
-      } else {
-        const nextPoint = squareTargets[state.squareIndex];
-        ui.examiner.textContent = `次は${nextPoint.label}点です。${state.squareIndex + 1}/${squareTargets.length}`;
-      }
-    }
-  }
-
-  if (state.phase === "squareLanding" && isLandedAt(takeoffPoint)) {
-    setPhase("eightTakeoff");
-  }
-
-  if (state.phase === "eightTakeoff") {
-    if (Math.abs(d.y - 1.5) < 0.2 && Math.hypot(d.vx, d.vz, d.vy) < 0.4) {
-      state.hoverTimer += dt;
-    } else {
-      state.hoverTimer = Math.max(0, state.hoverTimer - dt);
-    }
-    if (state.hoverTimer > 5) setPhase("eight");
-  }
-
-  if (state.phase === "eight") {
-    const target = figureEightTargets[state.eightIndex];
-    if (
-      target &&
-      Math.hypot(d.x - target.x, d.z - target.z) < 1 &&
-      Math.abs(d.y - 1.5) < 0.4
-    ) {
-      state.eightIndex += 1;
-      if (state.eightIndex >= figureEightTargets.length) {
-        setPhase("eightLanding");
-      } else {
-        const completedLaps = Math.max(0, Math.floor((state.eightIndex - 1) / figureEightLap.length));
-        ui.examiner.textContent = `8の字飛行を継続してください。完了 ${completedLaps}/2周`;
-      }
-    }
-  }
-
-  if (state.phase === "eightLanding" && isLandedAt(takeoffPoint)) {
-    setPhase("abnormalTakeoff");
-  }
-
-  if (state.phase === "abnormalTakeoff") {
-    if (Math.abs(d.y - 3.5) < 0.25 && Math.hypot(d.vx, d.vz, d.vy) < 0.5) {
-      state.hoverTimer += dt;
-    } else {
-      state.hoverTimer = Math.max(0, state.hoverTimer - dt);
-    }
-    if (state.hoverTimer > 5) setPhase("abnormal");
-  }
-
-  if (state.phase === "abnormal") {
-    const target = abnormalTargets[state.abnormalIndex];
-    const distance = target ? Math.hypot(d.x - target.x, d.z - target.z) : 0;
-    if (target && distance < 0.9 && Math.abs(d.y - 3.5) < 0.55) {
-      state.abnormalIndex += 1;
-      if (state.abnormalIndex >= abnormalTargets.length) {
-        setPhase("emergencyHover");
-      } else {
-        ui.examiner.textContent =
-          state.abnormalIndex === 1
-            ? "機首前向きのまま側方へ移動してください。"
-            : "同じ経路を側方移動で戻ってください。";
-      }
-    }
-  }
-
-  if (state.phase === "emergencyHover") {
-    if (Math.abs(d.y - 3.5) < 0.45 && Math.hypot(d.vx, d.vz, d.vy) < 0.5) {
-      state.emergencyHoverTimer += dt;
-    } else {
-      state.emergencyHoverTimer = Math.max(0, state.emergencyHoverTimer - dt);
-    }
-    if (state.emergencyHoverTimer > 3) setPhase("landing");
-  }
-
-  if (state.phase === "landing") {
-    if (d.y < 1.2) {
-      state.landingDrift = Math.max(state.landingDrift, Math.hypot(d.vx, d.vz));
-    }
-    if (isLandedAt(emergencyLandingPoint)) {
-      state.running = false;
-      setPhase("postflight");
-      buildPostflightChecklist();
-      ui.start.textContent = "飛行後点検";
-    }
-  }
+  if(state.elapsed>480) {state.timeLimitExceeded="square";finishExam();return;}
+  const d=state.drone;
+  if(state.phase==="takeoff") {
+    if(Math.hypot(d.x,d.z)<.9 && Math.abs(d.y-3.5)<.22 && Math.hypot(d.vx,d.vz,d.vy)<.45) state.hoverTimer+=dt;
+    else state.hoverTimer=0;
+    if(state.hoverTimer>5) setPhase("demoLanding");
+  } else if(state.phase==="demoLanding" && isLandedAt(takeoffPoint)) finishExam();
 }
 
 function isLandedAt(point) {
@@ -1296,9 +1215,13 @@ function isLandedAt(point) {
 
 function finishExam() {
   state.running = false;
+  state.paused = false;
+  document.getElementById("pauseButton").hidden = true;
   setPhase("result");
   const feedback = [];
-  let score = 100;
+  let score = 100 - state.evaluation.events.reduce((total,event)=>total+event.points,0);
+  if(state.evaluation.events.some(event=>event.type==="route-penalty")) feedback.push("経路逸脱を記録しました。航跡を確認し、区間の途中でも経路を維持してください。");
+  if(state.evaluation.fatal) feedback.push("練習用の中止区画に入りました。減速と経路維持を単科目で練習してください。");
   const altitudeRms =
     state.altitudeSampleTime > 0
       ? Math.sqrt(state.altitudeErrorSquared / state.altitudeSampleTime)
@@ -1318,15 +1241,15 @@ function finishExam() {
     score -= 16;
     feedback.push(`高度維持の平均誤差が${altitudeRms.toFixed(2)}mです。水平移動時の上昇・下降補正を小さく早めに入れてください。`);
   }
-  if (state.squareIndex < squareTargets.length) {
+  if (["full","square"].includes(state.subject) && state.squareIndex < squareTargets.length) {
     score -= 14;
     feedback.push("スクエア飛行の指定経路を完了できていません。次のリングを見失わないよう、進行方向と高度を保ってください。");
   }
-  if (state.eightIndex < figureEightTargets.length) {
+  if (["full","eight"].includes(state.subject) && state.eightIndex < figureEightTargets.length) {
     score -= 14;
     feedback.push("8の字飛行を連続2周完了できていません。直径約5mの経路を一定高度で反復してください。");
   }
-  if (state.abnormalIndex < abnormalTargets.length) {
+  if (["full","abnormal"].includes(state.subject) && state.abnormalIndex < abnormalTargets.length) {
     score -= 14;
     feedback.push("異常事態の飛行で指定側方移動を完了できていません。安定機能が弱い状態での惰性を早めに抑えてください。");
   }
@@ -1364,13 +1287,19 @@ function finishExam() {
     feedback.push("大きな減点傾向はありません。次は本番モードで途中表示なしに挑戦してください。");
   }
 
+  if(state.evaluation.fatal) score=0;
   score = Math.max(0, Math.round(score));
   ui.resultPanel.hidden = false;
   ui.downloadLog.disabled = state.flightRecords.length === 0;
-  ui.passFail.textContent = score >= 70 && !fatalLanding && !fatalTime ? "合格" : "不合格";
+  ui.passFail.textContent = state.evaluation.fatal || fatalLanding || fatalTime ? "練習中止・要改善" : "練習終了（公式合否は未評価）";
   ui.score.textContent = `${score} / 100`;
   ui.finalTime.textContent = formatTime(state.elapsed);
-  ui.feedback.innerHTML = feedback.map((item) => `<li>${item}</li>`).join("");
+  ui.feedback.innerHTML = feedback.slice(0,3).map((item) => `<li>${item}</li>`).join("");
+  const record={participantId:getParticipantId(),environment:{userAgent:navigator.userAgent,viewport:[innerWidth,innerHeight]},id:crypto.randomUUID(),at:new Date().toISOString(),versions,subject:state.subject,mode:state.mode,score,elapsed:state.elapsed,interrupted:state.interrupted,developerMode:state.developerMode,calibration:state.calibration,events:state.evaluation.events,feedback:feedback.slice(0,3),flightRecords:state.flightRecords};
+  try { savedHistory.append(record); document.getElementById("saveStatus").textContent="このブラウザに履歴を保存しました。"; }
+  catch { document.getElementById("saveStatus").textContent="履歴を保存できません。今回のログをダウンロードしてください。"; }
+  renderHistory();
+  renderEvents(record);
 }
 
 function recordTelemetry() {
@@ -1406,6 +1335,11 @@ function downloadFlightLog() {
   if (!state.flightRecords.length) return;
   const payload = {
     metadata: {
+      versions,
+      subject: state.subject,
+      interrupted: state.interrupted,
+      calibration: state.calibration,
+      evaluation_events: state.evaluation.events,
       document_title: "二等無人航空機実地試験 3D再現ログ",
       geodetic_frame: "LOCAL_ENU",
       origin: { name: "A点離着陸基準点", x_east_m: 0, y_north_m: 0, z_up_m: 0 },
@@ -1447,12 +1381,15 @@ function renderReadouts() {
 function loop() {
   const frameDt = world.clock ? Math.min(0.1, world.clock.getDelta()) : 0.016;
   updateControllerStatus();
+  updateInputCheck();
+  if(state.running && !state.developerMode && !getGamepad()) pauseTraining("接続が切れました。再接続後に校正してください。");
   const input = readInput();
   state.physicsAccumulator = Math.min(
     state.physicsAccumulator + frameDt,
     flightModel.fixedStep * 12
   );
   while (state.physicsAccumulator >= flightModel.fixedStep) {
+    if(state.paused) {state.physicsAccumulator=0;break;}
     updatePhysics(flightModel.fixedStep, input);
     updateMission(flightModel.fixedStep);
     state.physicsAccumulator -= flightModel.fixedStep;
@@ -1491,14 +1428,14 @@ function currentNavigationTarget() {
   if (state.phase === "square") return squareTargets[state.squareIndex] || null;
   if (state.phase === "eight") return figureEightTargets[state.eightIndex] || null;
   if (state.phase === "abnormal") return abnormalTargets[state.abnormalIndex] || null;
-  if (state.phase === "squareLanding" || state.phase === "eightLanding") return takeoffPoint;
+  if (["squareLanding","eightLanding","demoLanding"].includes(state.phase)) return takeoffPoint;
   if (state.phase === "landing") return emergencyLandingPoint;
   return null;
 }
 
 function targetAltitude() {
   if (["eightTakeoff", "eight"].includes(state.phase)) return 1.5;
-  if (["squareLanding", "eightLanding", "landing"].includes(state.phase)) return 0;
+  if (["squareLanding", "eightLanding", "demoLanding", "landing"].includes(state.phase)) return 0;
   if (["preflight", "postflight", "result"].includes(state.phase)) return state.drone.y;
   return 3.5;
 }
@@ -1510,6 +1447,7 @@ ui.start.addEventListener("click", startExam);
 ui.reset.addEventListener("click", reset);
 ui.downloadLog.addEventListener("click", downloadFlightLog);
 ui.developerMode.addEventListener("click", () => {
+  if(state.running) return;
   state.developerMode = !state.developerMode;
   ui.developerMode.classList.toggle("active", state.developerMode);
   ui.developerMode.textContent = state.developerMode
@@ -1520,11 +1458,113 @@ window.addEventListener("keydown", (event) => {
   if (["KeyW", "KeyA", "KeyS", "KeyD", "KeyE", "KeyQ", "ArrowLeft", "ArrowRight"].includes(event.code)) {
     event.preventDefault();
   }
+  if (["INPUT","TEXTAREA","SELECT"].includes(event.target.tagName)) return;
   state.keys.add(event.code);
 });
 window.addEventListener("keyup", (event) => state.keys.delete(event.code));
 window.addEventListener("gamepadconnected", updateControllerStatus);
-window.addEventListener("gamepaddisconnected", updateControllerStatus);
+window.addEventListener("gamepaddisconnected", () => {state.calibration=null;pauseTraining("接続が切れました。再接続後に校正してください。");updateControllerStatus();});
+window.addEventListener("blur",()=>{state.keys.clear();pauseTraining("画面を離れたため一時停止しました。");});
+document.addEventListener("visibilitychange",()=>{if(document.hidden) {state.keys.clear();pauseTraining("画面を離れたため一時停止しました。");}});
+
+function updateBoundaryDisplay() {
+  const index=state.phase==="square"?state.squareIndex:state.phase==="eight"?state.eightIndex:state.abnormalIndex;
+  const key=`${state.phase}:${index}`;
+  if(world.boundaryKey===key) return;
+  world.boundaryKey=key;
+  if(world.boundaryGroup) {world.scene.remove(world.boundaryGroup);world.boundaryGroup.geometry.dispose();world.boundaryGroup.material.dispose();world.boundaryGroup=null;}
+  if(!["square","eight","abnormal","takeoff","eightTakeoff","abnormalTakeoff","emergencyHover"].includes(state.phase)) return;
+  const points=[],colors=[];
+  for(let x=-10;x<=10;x+=.15) for(let z=-3;z<=16;z+=.15) {
+    const distance=routeDistance({x,z},state.phase,index,state.emergencyHoverPoint || undefined);
+    const penalty=Math.abs(distance-course.penalty)<.07,fatal=Math.abs(distance-course.failure)<.07;
+    if(penalty || fatal) {points.push(x,.06,z);colors.push(...(fatal?[.94,.43,.42]:[.9,.65,.25]));}
+  }
+  const geometry=new THREE.BufferGeometry();geometry.setAttribute("position",new THREE.Float32BufferAttribute(points,3));geometry.setAttribute("color",new THREE.Float32BufferAttribute(colors,3));
+  world.boundaryGroup=new THREE.Points(geometry,new THREE.PointsMaterial({size:.09,vertexColors:true}));world.scene.add(world.boundaryGroup);
+}
+function getParticipantId() {
+  try {let id=localStorage.getItem("drone.participant.v1");if(!id){id=crypto.randomUUID();localStorage.setItem("drone.participant.v1",id);}return id;}catch{return "unsaved";}
+}
+function trainingNow() { return state.simulationTime * 1000; }
+let accessGranted = false;
+let premiumMission = null;
+const savedHistory = historyStore({getItem:key=>window.localStorage.getItem(key),setItem:(key,value)=>window.localStorage.setItem(key,value),removeItem:key=>window.localStorage.removeItem(key)});
+let inputRange = Array.from({length:4},()=>({min:0,max:0}));
+let padIdentity = null;
+let restoredCalibrationAttempted = false;
+function updateInputCheck() {
+  const pad=getGamepad();
+  const identity=pad ? `${pad.index}:${pad.id}` : null;
+  if(identity!==padIdentity) {state.calibration=null;inputRange=Array.from({length:4},()=>({min:0,max:0}));padIdentity=identity;if(state.running) pauseTraining("入力機器が変わりました。再校正してください。");}
+  if(!pad) return;
+  if(!restoredCalibrationAttempted) {
+    restoredCalibrationAttempted=true;
+    try {const saved=JSON.parse(localStorage.getItem("drone.calibration.v1")||"null");if(saved?.id===pad.id && calibrationValid(saved.axes) && saved.axes.every((v,i)=>Math.abs(v-pad.axes[i])<.08)) state.calibration=saved;}catch{}
+  }
+  const axes=Array.from(pad.axes).slice(0,4);
+  axes.forEach((v,i)=>{inputRange[i].min=Math.min(inputRange[i].min,v);inputRange[i].max=Math.max(inputRange[i].max,v);});
+  document.getElementById("axisReadout").textContent=axes.map((v,i)=>`${i+1}: ${v.toFixed(2)}`).join(" / ");
+}
+function pauseTraining(message) {
+  if(!state.running || state.paused) return;
+  state.paused=true;state.interrupted=true;state.keys.clear();
+  if("speechSynthesis" in window) speechSynthesis.cancel();
+  Object.assign(state.command,{throttle:0,forward:0,strafe:0,yaw:0});
+  document.getElementById("pauseButton").textContent="確認して再開";
+  ui.examiner.textContent=message;
+}
+function renderHistory() {
+  const list=document.getElementById("historyList");list.replaceChildren();
+  for(const record of savedHistory.read().slice(0,5)) {
+    const li=document.createElement("li");
+    const button=document.createElement("button");
+    button.textContent=`${new Date(record.at).toLocaleString("ja-JP")} / ${subjects[record.subject]?.label || "練習"} / 独自指標 ${record.score}点${record.interrupted ? " / 中断あり" : ""}`;
+    button.addEventListener("click",()=>renderEvents(record));li.append(button);list.append(li);
+  }
+  if(!list.children.length) list.textContent="まだ履歴はありません。";
+}
+function renderEvents(record) {
+  const target=document.getElementById("eventList");target.replaceChildren();
+  const labels={"route-warning":"経路への復帰指示","route-penalty":"経路逸脱","route-return":"経路に復帰","failure-zone":"中止区画への侵入"};
+  for(const event of record.events) {const li=document.createElement("li");li.textContent=`${event.time.toFixed(1)}秒 / ${event.phase} / ${labels[event.type] || event.type} / (${event.position.x.toFixed(1)}, ${event.position.z.toFixed(1)})m`;target.append(li);}
+  if(!target.children.length) target.textContent="記録された経路イベントはありません。公式の全項目を評価した結果ではありません。";
+  const canvas=document.getElementById("trackCanvas"),ctx=canvas.getContext("2d");ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.strokeStyle="#58c48f";ctx.lineWidth=2;ctx.beginPath();
+  record.flightRecords.forEach((row,i)=>{const x=canvas.width/2+row.x_east_m*10,y=canvas.height-25-row.y_north_m*10;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();
+  ctx.fillStyle="#ef6f6c";record.events.filter(e=>e.points || e.type==="failure-zone").forEach(e=>{ctx.beginPath();ctx.arc(canvas.width/2+e.position.x*10,canvas.height-25-e.position.z*10,4,0,Math.PI*2);ctx.fill();});
+}
+document.getElementById("calibrateButton").addEventListener("click",()=>{
+  if(state.running && !state.paused) return;
+  const pad=getGamepad(), axes=pad ? Array.from(pad.axes).slice(0,4) : [];
+  if(!calibrationValid(axes) || inputRange.some(r=>r.min>-.7 || r.max<.7)) {ui.examiner.textContent="全4軸を両端まで動かし、スティックを中立に戻してから校正してください。";return;}
+  state.calibration={id:pad.id,axes,at:new Date().toISOString()};
+  try{localStorage.setItem("drone.calibration.v1",JSON.stringify(state.calibration));}catch{}ui.examiner.textContent="中立校正を保存しました。各軸の操作方向も無料体験で確認してください。";
+});
+document.getElementById("subjectSelect").addEventListener("change",(event)=>{reset();state.subject=event.target.value;});
+document.getElementById("pauseButton").addEventListener("click",()=>{
+  if(!state.paused) {pauseTraining("一時停止しました。");return;}
+  if(!state.developerMode && (!getGamepad() || !state.calibration)) {ui.examiner.textContent="再接続と校正を完了してください。";return;}
+  if(state.mode==="exam") {state.evaluation.events.push({type:"interrupted",points:0,phase:state.phase,time:state.elapsed,position:{x:state.drone.x,z:state.drone.z}});finishExam();return;}
+  state.paused=false;state.physicsAccumulator=0;document.getElementById("pauseButton").textContent="一時停止";ui.examiner.textContent=phases[state.phase].line;
+});
+document.getElementById("retryButton").addEventListener("click",()=>{reset();ui.examiner.textContent="点検後、同じ科目を再練習できます。";});
+document.getElementById("exportHistoryButton").addEventListener("click",()=>{
+  const blob=new Blob([JSON.stringify({versions,records:savedHistory.read()},null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="drone-history.json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
+setInterval(async()=>{
+  if(!state.running || state.subject==="demo") return;
+  try {const status=await fetch("/api/status").then(r=>r.json());if(!status.access){accessGranted=false;pauseTraining("利用期間が終了しました。履歴を保存して終了します。");finishExam();}}
+  catch {pauseTraining("利用状況を確認できません。一度終了して再接続してください。");}
+},30000);
+renderHistory();
+fetch("/api/status").then(response=>response.json()).then(status=>{
+  accessGranted=Boolean(status.access);
+  const selected=new URLSearchParams(location.search).get("subject");
+  if(subjects[selected]) {state.subject=selected;document.getElementById("subjectSelect").value=selected;reset();}
+  if(!accessGranted) ui.examiner.textContent="登録不要の無料体験を利用できます。他の科目は検証参加者・契約者向けです。";
+}).catch(()=>{ui.examiner.textContent="無料体験を利用できます。全科目の利用には専用サーバーから起動してください。";});
 
 initThreeWorld();
 reset();

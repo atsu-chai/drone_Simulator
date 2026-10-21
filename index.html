@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ドローン国家資格 実地試験対策シミュレーター</title>
     <link rel="stylesheet" href="styles.css?v=20260610" />
+  <link rel="stylesheet" href="site.css">
   </head>
   <body>
     <div class="orientation-warning">
@@ -29,7 +30,7 @@
         <div class="hud telemetry-status">
           <span id="stabilityReadout">位置安定 ON</span>
           <span>BAT <strong id="batteryReadout">100%</strong></span>
-          <span>風速 2.6m/s</span>
+          <span>無風（風の物理計算なし）</span>
         </div>
         <div class="hud bottom-center" id="examinerLine">
           飛行前点検を開始してください。
@@ -39,34 +40,40 @@
       <aside class="control-panel" aria-label="操作パネル">
         <header>
           <img class="product-mark" src="assets/drone.svg" alt="ドローン訓練シミュレーター" />
-          <p class="eyebrow">二等無人航空機操縦士</p>
-          <h1>実地試験プロトタイプ</h1>
+          <p><a href="home.html">サービス案内</a> · <a href="learn.html">教材と学習順序</a></p><p class="eyebrow">二等無人航空機操縦士</p>
+          <h1>実地試験トレーナー</h1>
           <p class="notice">
             正式な講習、試験免除、認定を提供するものではありません。最新の制度と実施要領を確認してください。
           </p>
         </header>
 
         <section class="panel-section">
-          <h2>試験設定</h2>
+          <h2>練習設定</h2><label><input id="voiceEnabled" type="checkbox"> 音声指示を有効にする</label>
+          <p class="notice">検証版：公式合否は未評価です。対応機器は実機確認中。実機練習を併用してください。</p>
+          <label class="select-label">練習科目<select id="subjectSelect">
+            <option value="demo">無料体験：離陸・ホバリング・着陸</option><option value="square">スクエア飛行</option><option value="eight">8の字飛行</option><option value="abnormal">異常事態・緊急着陸</option><option value="full">通し練習</option>
+          </select></label>
           <div class="segmented" role="group" aria-label="モード選択">
             <button class="active" data-mode="practice">練習</button>
-            <button data-mode="exam">本番</button>
+            <button data-mode="exam">模擬</button>
           </div>
           <label class="select-label">
             コントローラー
             <select id="presetSelect">
-              <option value="standard">標準: 左上下=高度 / 右=水平移動</option>
+
               <option value="mode2">Mode 2: 左=高度・旋回 / 右=前後左右</option>
-              <option value="xbox">Xbox系</option>
-              <option value="playstation">PlayStation系</option>
+
+
             </select>
           </label>
           <div class="controller-status" id="controllerStatus">
             外部コントローラー未接続
           </div>
-          <button id="developerModeButton" class="ghost-button active">
-            開発者モード: キーボード操作 ON
+          <button id="developerModeButton" class="ghost-button">
+            開発者モード: キーボード操作 OFF
           </button>
+          <p class="notice">4軸を両端まで動かし、中立へ戻して校正してください。</p><output id="axisReadout">コントローラーを接続してください</output>
+          <button id="calibrateButton" class="secondary-button">入力確認・中立校正</button>
           <p class="keyboard-help">
             W/S: 前後、A/D: 左右、E/Q: 上昇/下降、←/→: 旋回
           </p>
@@ -88,21 +95,23 @@
             <li data-mission="result">結果</li>
           </ol>
           <button id="startButton" class="primary-button">試験を開始</button>
+          <button id="pauseButton" class="secondary-button" hidden>一時停止</button>
           <button id="resetButton" class="secondary-button">リセット</button>
         </section>
 
         <section class="panel-section result-panel" id="resultPanel" hidden>
           <h2>結果</h2>
           <dl>
-            <div><dt>判定</dt><dd id="passFail">-</dd></div>
-            <div><dt>スコア</dt><dd id="scoreValue">-</dd></div>
+            <div><dt>練習状態</dt><dd id="passFail">-</dd></div>
+            <div><dt>独自練習指標</dt><dd id="scoreValue">-</dd></div>
             <div><dt>所要時間</dt><dd id="finalTime">-</dd></div>
           </dl>
-          <ul id="feedbackList"></ul>
+          <ul id="feedbackList"></ul><p id="saveStatus" role="status"></p><button id="retryButton" class="secondary-button">同じ科目を再練習</button>
           <button id="downloadLogButton" class="secondary-button" disabled>
             1Hz飛行ログをダウンロード
           </button>
         </section>
+        <section class="panel-section"><h2>直近5回の履歴</h2><p class="notice">このブラウザに最大100回保存。端末変更やデータ削除に備え出力してください。</p><ol id="historyList" class="checklist"></ol><button id="exportHistoryButton" class="secondary-button">履歴を出力</button><h2>選択した練習の振り返り</h2><canvas id="trackCanvas" width="300" height="230" aria-label="上から見た飛行航跡。赤丸は評価イベント"></canvas><ul id="eventList"></ul></section>
       </aside>
     </main>
 
