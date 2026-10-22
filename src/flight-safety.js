@@ -1,17 +1,19 @@
+import {aircraftDimensions,aircraftContactEnvelope} from './aircraft-geometry.js';
 import {layouts} from './course-layout.js';
 export const coneDimensions=Object.freeze({height:.5,bodyHeight:.45,bodyBottom:.05,baseWidth:.5,baseHeight:.05,baseRadius:.21,tipRadius:.034});
-export const safetyLimits=Object.freeze({rotorRadius:.32,airframeHalfHeight:.15,dangerousSpeed:5,speedHold:.25,maximumAltitude:8});
+export const safetyLimits=Object.freeze({dangerousSpeed:5,speedHold:.25,maximumAltitude:8});
 export function touchesCone(position,marker) {
-  const centerY=position.y+.18;
-  if(centerY-safetyLimits.airframeHalfHeight>coneDimensions.height || centerY+safetyLimits.airframeHalfHeight<0)return false;
+  const centerY=position.y+aircraftDimensions.centerHeight;
+  const envelope=aircraftContactEnvelope(position.pitch,position.roll);
+  if(centerY-envelope.halfHeight>coneDimensions.height || centerY+envelope.halfHeight<0)return false;
   const dx=position.x-marker.x,dz=position.z-marker.z;
-  if(centerY-safetyLimits.airframeHalfHeight<=coneDimensions.baseHeight) {
+  if(centerY-envelope.halfHeight<=coneDimensions.baseHeight) {
     const nearX=Math.max(0,Math.abs(dx)-coneDimensions.baseWidth/2),nearZ=Math.max(0,Math.abs(dz)-coneDimensions.baseWidth/2);
-    if(Math.hypot(nearX,nearZ)<=safetyLimits.rotorRadius)return true;
+    if(Math.hypot(nearX,nearZ)<=envelope.radius)return true;
   }
-  const low=Math.max(coneDimensions.bodyBottom,centerY-safetyLimits.airframeHalfHeight);
+  const low=Math.max(coneDimensions.bodyBottom,centerY-envelope.halfHeight);
   const radius=coneDimensions.baseRadius-(coneDimensions.baseRadius-coneDimensions.tipRadius)*Math.min(1,(low-coneDimensions.bodyBottom)/coneDimensions.bodyHeight);
-  return Math.hypot(dx,dz)<=radius+safetyLimits.rotorRadius;
+  return Math.hypot(dx,dz)<=radius+envelope.radius;
 }
 export function evaluateFlightSafety(state,dt) {
   if(!state.running || state.paused || state.presentation || state.evaluation.fatal)return [];

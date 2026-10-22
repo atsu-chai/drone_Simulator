@@ -1,3 +1,4 @@
+import {aircraftDimensions,fitAircraftBounds} from './src/aircraft-geometry.js';
 import {createControllerInput,keyboardInput,inputCentered} from './src/controller-input.js';
 import {summarizeFlight} from './src/flight-results.js';
 import {advanceFlightFrame} from './src/flight-frame.js';
@@ -290,6 +291,24 @@ function addCourseCone(THREE, x, z, label, keys, missions, subtitle = "", parent
   world.courseMarkers.push(group);
 }
 
+function fitDroneModel(model,rotors) {
+  model.updateMatrixWorld(true);
+  const bounds=new THREE.Box3().setFromObject(model);
+  // Expand the horizontal sweep at every rotor angle; local Y rotation keeps mesh height.
+  for(const rotor of rotors) {
+    rotor.geometry.computeBoundingSphere();
+    const sphere=rotor.geometry.boundingSphere.clone();
+    // Both supported assets spin these meshes around their local Y axis.
+    sphere.radius+=Math.hypot(sphere.center.x,sphere.center.z);
+    sphere.center.x=0;sphere.center.z=0;
+    sphere.applyMatrix4(rotor.matrixWorld);
+    bounds.union(new THREE.Box3().setFromCenterAndSize(sphere.center,new THREE.Vector3(2*sphere.radius,0,2*sphere.radius)));
+  }
+  const fit=fitAircraftBounds(bounds.min,bounds.max);
+  model.scale.setScalar(fit.scale);
+  model.position.set(fit.offset.x,fit.offset.y,fit.offset.z);
+}
+
 function buildDrone() {
   const group = new THREE.Group();
   const fallback = new THREE.Group();
@@ -350,12 +369,13 @@ function buildDrone() {
     fallback.add(rotorDisc);
     world.rotorDiscs.push(rotorDisc);
   });
+  fitDroneModel(fallback,world.propellers);
   group.add(fallback);
-  world.headingArrow=new THREE.ArrowHelper(new THREE.Vector3(0,0,1),new THREE.Vector3(0,.24,0),1.5,0x58ffb0,.35,.25);
+  world.headingArrow=new THREE.ArrowHelper(new THREE.Vector3(0,0,1),new THREE.Vector3(0,aircraftDimensions.halfHeight+.06,0),aircraftDimensions.radius*1.8,0x58ffb0,.22,.16);
   group.add(world.headingArrow);
 
   world.shadow = new THREE.Mesh(
-    new THREE.CircleGeometry(0.9, 48),
+    new THREE.CircleGeometry(aircraftDimensions.radius, 48),
     new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.24, depthWrite: false })
   );
   world.shadow.rotation.x = -Math.PI / 2;
@@ -374,12 +394,9 @@ function loadDroneModel() {
     "assets/models/cesium-drone.glb",
     (gltf) => {
       const model = gltf.scene;
-      model.scale.setScalar(0.35);
-      model.updateMatrixWorld(true);
-
-      const bounds = new THREE.Box3().setFromObject(model);
-      const center = bounds.getCenter(new THREE.Vector3());
-      model.position.set(-center.x, -bounds.min.y - 0.14, -center.z);
+      const rotors=[];
+      model.traverse(child=>{if(child.isMesh && child.name.startsWith('Prop'))rotors.push(child);});
+      fitDroneModel(model,rotors);
       model.traverse((child) => {
         if (!child.isMesh) return;
         child.castShadow = true;
@@ -428,7 +445,7 @@ function updateThreeWorld(dt) {
     field.guides.visible=state.mode==='practice' || Boolean(state.presentation);
   }
   world.pilotEye.set(layout.pilot.x, 1.65, layout.pilot.z);
-  world.drone.position.set(-d.x, d.y + 0.18, d.z);
+  world.drone.position.set(-d.x, d.y + aircraftDimensions.centerHeight, d.z);
   world.drone.rotation.set(d.pitch, -d.yaw, -d.roll);
   world.headingArrow.visible=state.mode==='practice' || Boolean(state.presentation);
 
