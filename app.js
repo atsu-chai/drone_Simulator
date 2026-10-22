@@ -921,7 +921,8 @@ function updatePresentation(dt) {
     player.lastStep=sample.stepIndex;
     if(document.getElementById("voiceEnabled").checked && 'speechSynthesis' in window) {speechSynthesis.cancel();const speech=new SpeechSynthesisUtterance(sample.caption);speech.lang='ja-JP';speechSynthesis.speak(speech);}
   }
-  if(sample.done) {player.paused=true;document.getElementById("presentationPause").textContent="もう一度再生";}
+  if(sample.done)player.paused=true;
+  if(player.paused)document.getElementById("presentationPause").textContent=sample.done?"もう一度再生":"再生";
 }
 document.getElementById("watchButton").addEventListener("click",()=>{
   const subject=state.subject;reset();

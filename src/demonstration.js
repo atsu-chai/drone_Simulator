@@ -25,11 +25,12 @@ export function createDemonstration(subject='square') {
       for(const p of squarePath) move(p,'square',`${p.label}点へ直線飛行します。高度3.5mと機首方向を維持します。`);
       move(layout.takeoff,'return','A点からHへ戻り、着陸準備をします。',false);
     } else if(id==='eight') {
+      step(position,1,'turn','機首を円の接線方向へ向けます。',{yaw:0});
       for(let lap=0;lap<2;lap++) for(let lobe=0;lobe<2;lobe++) {
         const fromAngle=lobe===0?0:Math.PI,sign=lobe===0?1:-1;
         const yawStart=Math.atan2(-sign*Math.sin(fromAngle),sign*Math.cos(fromAngle));
-        step(position,1,'turn',`機首を円の接線方向へ向けます。`,{yaw:yawStart});
-        step({...layout.takeoff,y:1.5},16,'eight',`${lap+1}周目。${lobe+1}番コーンを囲み、機首を進行方向へ向けて円弧を飛行します。`,{arc:{center:eightCenters[lobe],fromAngle,sign},yaw:yawStart});
+        const rampIn=lap===0 && lobe===0,rampOut=lap===1 && lobe===1;
+        step({...layout.takeoff,y:1.5},16+((rampIn||rampOut)?0.5:0),'eight',`${lap+1}周目。${lobe+1}番コーンを囲み、機首を進行方向へ向けて円弧を飛行します。`,{arc:{center:eightCenters[lobe],fromAngle,sign,rampIn,rampOut},yaw:yawStart});
       }
     } else {
       for(const [index,point] of abnormalTargets.entries()) move(point,'abnormal',index===0?'A点へ準備移動します。機首を前方へ向けたまま、高度3.5mを保ちます。':`${point.label}点へ側方移動。位置安定OFFのため、流れを早めに抑えます。`,false);
@@ -50,7 +51,19 @@ export function createDemonstration(subject='square') {
       const rate=6*progress*(1-progress)/(step.end-step.start);
       let velocity={x:(step.to.x-step.from.x)*rate,y:(step.to.y-step.from.y)*rate,z:(step.to.z-step.from.z)*rate};
       let yaw=step.fromYaw+angleDelta(step.fromYaw,step.toYaw)*eased;
-      if(step.arc) {const angle=step.arc.fromAngle+step.arc.sign*tau*progress;position={x:step.arc.center.x+Math.cos(angle)*2.5,z:step.arc.center.z+Math.sin(angle)*2.5,y:1.5};yaw=Math.atan2(-step.arc.sign*Math.sin(angle),step.arc.sign*Math.cos(angle));const angularRate=step.arc.sign*tau/(step.end-step.start);velocity={x:-Math.sin(angle)*2.5*angularRate,y:0,z:Math.cos(angle)*2.5*angularRate};}
+      if(step.arc) {
+        const elapsed=t-step.start,duration=step.end-step.start;
+        // One second to enter/leave the complete figure eight; no stops at H between lobes.
+        const entry=step.arc.rampIn?Math.min(1,elapsed):1;
+        const exit=step.arc.rampOut?Math.min(1,duration-elapsed):1;
+        let travel=step.arc.rampIn?(elapsed<1?elapsed*elapsed/2:elapsed-.5):elapsed;
+        if(step.arc.rampOut)travel-=Math.max(0,elapsed-(duration-1))**2/2;
+        const angle=step.arc.fromAngle+step.arc.sign*tau*travel/16;
+        position={x:step.arc.center.x+Math.cos(angle)*2.5,z:step.arc.center.z+Math.sin(angle)*2.5,y:1.5};
+        yaw=Math.atan2(-step.arc.sign*Math.sin(angle),step.arc.sign*Math.cos(angle));
+        const angularRate=step.arc.sign*tau/16*entry*exit;
+        velocity={x:-Math.sin(angle)*2.5*angularRate,y:0,z:Math.cos(angle)*2.5*angularRate};
+      }
       return {...position,yaw,velocity,courseId:step.courseId,phase:step.phase,caption:step.caption,stepIndex:index<0?steps.length-1:index,progress:t/total,done:t>=total};
     },
   };

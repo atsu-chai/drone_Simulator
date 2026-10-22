@@ -39,3 +39,24 @@ test('ideal arc heading is tangent and emergency return retains forward heading'
   }
   assert.equal(expectedHeading('emergencyTransit',{x:6,z:0},0,{x:0,z:2.5}),0);
 });
+
+
+test('eight demonstration crosses H continuously and settles before descent',()=>{
+  const player=createDemonstration('eight'),arcs=player.steps.filter(step=>step.arc);
+  const speed=p=>Math.hypot(p.velocity.x,p.velocity.z);
+  for(let i=1;i<arcs.length;i++) {
+    assert.equal(arcs[i-1].end,arcs[i].start);
+    const before=player.sample(arcs[i].start-1e-6),after=player.sample(arcs[i].start+1e-6);
+    assert.ok(speed(before)>.9 && speed(after)>.9);
+    assert.ok(Math.hypot(before.velocity.x-after.velocity.x,before.velocity.z-after.velocity.z)<1e-5);
+    assert.ok(Math.hypot(before.x-after.x,before.z-after.z)<1e-5);
+    assert.ok(Math.abs(Math.atan2(Math.sin(before.yaw-after.yaw),Math.cos(before.yaw-after.yaw)))<1e-5);
+  }
+  for(const step of arcs)for(const offset of [.25,.75,2,8,step.end-step.start-.25]) {
+    const t=step.start+offset,p=player.sample(t),a=player.sample(t-1e-4),b=player.sample(t+1e-4);
+    assert.ok(Math.hypot((b.x-a.x)/.0002-p.velocity.x,(b.z-a.z)/.0002-p.velocity.z)<1e-5);
+  }
+  assert.equal(speed(player.sample(arcs[0].start)),0);
+  assert.ok(speed(player.sample(arcs.at(-1).end-1e-6))<1e-5);
+  const last=player.sample(arcs.at(-1).end);assert.equal(last.phase,'landing');assert.ok(speed(last)<1e-10);
+});
