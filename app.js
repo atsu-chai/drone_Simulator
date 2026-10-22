@@ -1,13 +1,14 @@
+import {createControllerInput,keyboardInput,inputCentered} from './src/controller-input.js';
 import {summarizeFlight} from './src/flight-results.js';
 import {advanceFlightFrame} from './src/flight-frame.js';
 import {evaluateFlightCoaching,coachingMessages} from './src/flight-coaching.js';
-import {createFlightState, transitionFlightPhase, navigationTarget, desiredAltitude, landedAt, phaseMission, taskLimits, squareTargets, figureEightTargets} from "./src/session-rules.js";
+import {createFlightState, transitionFlightPhase, navigationTarget, desiredAltitude, landedAt, pauseFlight, recordSessionInput, phaseMission, taskLimits, squareTargets, figureEightTargets} from "./src/session-rules.js";
 import {evaluateFlightSafety, safetyMessages, coneDimensions} from "./src/flight-safety.js";
 import { flightModel, createFlightPhysics } from "./src/flight-physics.js";
 import { layouts, expectedHeading, figureEightLap, abnormalTargets } from "./src/course-layout.js";
 import { createCourseScene } from "./src/course-scene.js";
 import { createDemonstration } from "./src/demonstration.js";
-import { versions, course, evaluateSample, normalizedAxis, calibrationValid, subjects, historyStore } from "./src/training.js";
+import { versions, course, evaluateSample, subjects, historyStore } from "./src/training.js";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
@@ -584,6 +585,7 @@ function reset(nextSubject) {
 
 async function startExam() {
   if(state.running || state.presentation) return;
+  pollController(0);
   if(state.subject!=="demo") {
     ui.start.disabled=true;
     try {const status=await fetch("/api/status").then(r=>r.json());accessGranted=Boolean(status.access);
@@ -596,11 +598,12 @@ async function startExam() {
     return;
   }
   if (!state.inputReady) {
-    ui.examiner.textContent = "外部コントローラーを接続してください。開発者モードではキーボード操作で開始できます。";
+    ui.examiner.textContent = controllerStatus.connected?controllerStatus.instruction:"外部コントローラーを接続してください。開発者モードではキーボード操作で開始できます。";
     return;
   }
   if (!state.threeReady) { ui.examiner.textContent = "3D画面の準備が完了していません。再読み込みしてください。"; return; }
-  if (!state.developerMode && !state.calibration) { ui.examiner.textContent = "開始前に入力確認と中立校正をしてください。"; return; }
+  if (!state.developerMode && (!controllerStatus.canFly || !controllerStatus.centered)) { ui.examiner.textContent="操作確認を終え、両方のスティックを中立へ戻してから開始してください。";return; }
+  if(state.developerMode&&!inputCentered(keyboardInput(state.keys))){ui.examiner.textContent="操縦キーを離してから開始してください。";return;}
   state.running = true;
   document.getElementById("pauseButton").hidden = false;
   state.startTime = trainingNow();
@@ -611,57 +614,14 @@ async function startExam() {
   ui.start.textContent = "試験中";
   ui.start.disabled = true;
   setPhase(subjects[state.subject].phase);
+  recordSessionInput(state,state.developerMode?null:state.calibration,state.developerMode?'keyboard':'controller');
 }
 
-function getGamepad() {
-  const pads = navigator.getGamepads ? [...navigator.getGamepads()] : [];
-  return pads.find(Boolean);
+function connectedPads() {
+  try {return navigator.getGamepads?Array.from(navigator.getGamepads()):[];}catch{return [];}
 }
-
-function updateControllerStatus() {
-  const pad = getGamepad();
-  state.inputReady = Boolean(pad || state.developerMode);
-  if (pad) {
-    ui.controller.textContent = `接続中: ${pad.id}`;
-    ui.controller.classList.add("ready");
-  } else if (state.developerMode) {
-    ui.controller.textContent = "開発者モード: キーボード操作";
-    ui.controller.classList.add("ready");
-  } else {
-    ui.controller.textContent = "外部コントローラー未接続";
-    ui.controller.classList.remove("ready");
-  }
-}
-
 function readInput() {
-  const pad = getGamepad();
-  const input = { throttle: 0, forward: 0, strafe: 0, yaw: 0 };
-  if (pad) {
-    const axes = pad.axes.map((value, index) => normalizedAxis(value, state.calibration?.axes[index] || 0));
-    const preset = ui.preset.value;
-    if (preset === "mode2") {
-      input.throttle = -(axes[1] || 0);
-      input.yaw = axes[0] || 0;
-      input.forward = -(axes[3] || 0);
-      input.strafe = axes[2] || 0;
-    } else {
-      input.throttle = -(axes[1] || 0);
-      input.forward = -(axes[3] || 0);
-      input.strafe = axes[2] || 0;
-      input.yaw = axes[0] || 0;
-    }
-  }
-  if (state.developerMode) {
-    input.throttle += (state.keys.has("KeyE") ? 1 : 0) - (state.keys.has("KeyQ") ? 1 : 0);
-    input.forward += (state.keys.has("KeyW") ? 1 : 0) - (state.keys.has("KeyS") ? 1 : 0);
-    input.strafe += (state.keys.has("KeyD") ? 1 : 0) - (state.keys.has("KeyA") ? 1 : 0);
-    input.yaw += (state.keys.has("ArrowRight") ? 1 : 0) - (state.keys.has("ArrowLeft") ? 1 : 0);
-  }
-  input.throttle = clamp(input.throttle, -1, 1);
-  input.forward = clamp(input.forward, -1, 1);
-  input.strafe = clamp(input.strafe, -1, 1);
-  input.yaw = clamp(input.yaw, -1, 1);
-  return input;
+  return state.developerMode?keyboardInput(state.keys):controllerStatus.input;
 }
 
 const updatePhysics = createFlightPhysics({state,clamp,trainingNow,targetAltitude,currentNavigationTarget,angleDifference});
@@ -707,7 +667,7 @@ function finishExam() {
   retry.hidden=result.score===100 && result.progress.every(task=>task.complete);
   retry.textContent=`${subjects[result.retrySubject].label}を重点練習`;
   retry.dataset.subject=result.retrySubject;
-  const record={participantId:getParticipantId(),environment:{userAgent:navigator.userAgent,viewport:[innerWidth,innerHeight]},id:crypto.randomUUID(),at:new Date().toISOString(),versions,subject:state.subject,mode:state.mode,score:result.score,elapsed:state.elapsed,endingPhase,progress:result.progress,retrySubject:result.retrySubject,interrupted:state.interrupted,developerMode:state.developerMode,calibration:state.calibration,events:state.evaluation.events,feedback:result.feedback,flightRecords:state.flightRecords};
+  const record={participantId:getParticipantId(),environment:{userAgent:navigator.userAgent,viewport:[innerWidth,innerHeight]},id:crypto.randomUUID(),at:new Date().toISOString(),versions,subject:state.subject,mode:state.mode,score:result.score,elapsed:state.elapsed,endingPhase,progress:result.progress,retrySubject:result.retrySubject,interrupted:state.interrupted,developerMode:state.developerMode,calibration:state.sessionCalibration,inputConfigurations:state.inputConfigurations,events:state.evaluation.events,feedback:result.feedback,flightRecords:state.flightRecords};
   try { savedHistory.append(record);document.getElementById("saveStatus").textContent="このブラウザに履歴を保存しました。"; }
   catch {document.getElementById("saveStatus").textContent="履歴を保存できません。今回のログをダウンロードしてください。";}
   renderHistory();renderEvents(record);
@@ -724,6 +684,7 @@ function recordTelemetry() {
     elapsed_s: second,
     timestamp_jst: formatJstTimestamp(new Date()),
     phase: state.phase,
+    input_configuration: state.inputConfigurations.length-1,
     x_east_m: Number(d.x.toFixed(3)),
     y_north_m: Number(d.z.toFixed(3)),
     z_up_m: Number(d.y.toFixed(3)),
@@ -749,7 +710,8 @@ function downloadFlightLog() {
       versions,
       subject: state.subject,
       interrupted: state.interrupted,
-      calibration: state.calibration,
+      calibration: state.sessionCalibration,
+      input_configurations: state.inputConfigurations,
       evaluation_events: state.evaluation.events,
       document_title: "二等無人航空機実地試験 3D再現ログ",
       geodetic_frame: "LOCAL_ENU",
@@ -800,10 +762,10 @@ function renderReadouts() {
 function renderInputMonitor(input) {
   const preview=Boolean(state.presentation);
   const applied=state.running && !state.paused ? state.command : {yaw:0,throttle:0,strafe:0,forward:0};
-  const raw=preview ? {yaw:0,throttle:0,strafe:0,forward:0} : input;
+  const raw=preview?{yaw:0,throttle:0,strafe:0,forward:0}:!state.developerMode&&(!state.running||state.paused)?controllerStatus.preview:input;
   const points=[[raw.yaw,raw.throttle],[raw.strafe,raw.forward],[applied.yaw,applied.throttle],[applied.strafe,applied.forward]];
   points.forEach(([x,y],i)=>{ui.sticks[i].style.transform=`translate(${x*34}px,${-y*34}px)`;});
-  ui.inputStatus.textContent=preview ? "見本飛行：操縦入力は使いません" : state.paused ? "一時停止：機体への指令は停止中" : getGamepad() ? "コントローラー入力" : state.developerMode ? "キーボード入力" : "コントローラーを接続してください";
+  ui.inputStatus.textContent=preview ? "見本飛行：操縦入力は使いません" : state.paused ? "一時停止：機体への指令は停止中" : state.developerMode ? "キーボード入力" : controllerStatus.canFly ? "コントローラー入力" : controllerStatus.connected ? "操作確認中：機体は動きません" : "コントローラーを接続してください";
   ui.inputValues.textContent=`高度 ${Math.round(raw.throttle*100)}%・旋回 ${Math.round(raw.yaw*100)}%・前後 ${Math.round(raw.forward*100)}%・左右 ${Math.round(raw.strafe*100)}%`;
 }
 
@@ -812,9 +774,7 @@ function loop() {
   if(state.presentation) {
     updatePresentation(frameDt);updateThreeWorld(frameDt);renderReadouts();renderInputMonitor({});requestAnimationFrame(loop);return;
   }
-  updateControllerStatus();
-  updateInputCheck();
-  if(state.running && !state.developerMode && !getGamepad()) pauseTraining("接続が切れました。再接続後に校正してください。");
+  pollController(frameDt);
   const input = readInput();
   renderInputMonitor(input);
   advanceFlightFrame(state,frameDt,input,updatePhysics,updateMission);
@@ -857,21 +817,25 @@ ui.downloadLog.addEventListener("click", downloadFlightLog);
 ui.developerMode.addEventListener("click", () => {
   if(state.running) return;
   state.developerMode = !state.developerMode;
+  state.keys.clear();
   ui.developerMode.classList.toggle("active", state.developerMode);
   ui.developerMode.textContent = state.developerMode
     ? "開発者モード: キーボード操作 ON"
     : "開発者モード: キーボード操作 OFF";
 });
 window.addEventListener("keydown", (event) => {
+  if (["INPUT","TEXTAREA","SELECT"].includes(event.target.tagName) || event.target.isContentEditable)return;
   if (["KeyW", "KeyA", "KeyS", "KeyD", "KeyE", "KeyQ", "ArrowLeft", "ArrowRight"].includes(event.code)) {
     event.preventDefault();
   }
-  if (["INPUT","TEXTAREA","SELECT"].includes(event.target.tagName)) return;
   state.keys.add(event.code);
 });
 window.addEventListener("keyup", (event) => state.keys.delete(event.code));
-window.addEventListener("gamepadconnected", updateControllerStatus);
-window.addEventListener("gamepaddisconnected", () => {state.calibration=null;pauseTraining("接続が切れました。再接続後に校正してください。");updateControllerStatus();});
+window.addEventListener('gamepadconnected',()=>pollController(0));
+window.addEventListener('gamepaddisconnected',event=>{
+  if(event.gamepad.index===controllerStatus.padIndex){controllerInput.requireConfirmation();if(!state.developerMode)pauseTraining('接続が切れました。再接続後に中立を確認してください。');}
+  pollController(0);
+});
 window.addEventListener("blur",()=>{state.keys.clear();pauseTraining("画面を離れたため一時停止しました。");});
 document.addEventListener("visibilitychange",()=>{if(document.hidden) {state.keys.clear();pauseTraining("画面を離れたため一時停止しました。");}});
 
@@ -924,30 +888,36 @@ function trainingNow() { return state.simulationTime * 1000; }
 let accessGranted = false;
 let premiumMission = null;
 const savedHistory = historyStore({getItem:key=>window.localStorage.getItem(key),setItem:(key,value)=>window.localStorage.setItem(key,value),removeItem:key=>window.localStorage.removeItem(key)});
-let inputRange = Array.from({length:4},()=>({min:0,max:0}));
-let padIdentity = null;
-let restoredCalibrationAttempted = false;
-function updateInputCheck() {
-  const pad=getGamepad();
-  const identity=pad ? `${pad.index}:${pad.id}` : null;
-  if(identity!==padIdentity) {state.calibration=null;inputRange=Array.from({length:4},()=>({min:0,max:0}));padIdentity=identity;if(state.running) pauseTraining("入力機器が変わりました。再校正してください。");}
-  if(!pad) return;
-  if(!restoredCalibrationAttempted) {
-    restoredCalibrationAttempted=true;
-    try {const saved=JSON.parse(localStorage.getItem("drone.calibration.v1")||"null");if(saved?.id===pad.id && calibrationValid(saved.axes) && saved.axes.every((v,i)=>Math.abs(v-pad.axes[i])<.08)) state.calibration=saved;}catch{}
-  }
-  const axes=Array.from(pad.axes).slice(0,4);
-  axes.forEach((v,i)=>{inputRange[i].min=Math.min(inputRange[i].min,v);inputRange[i].max=Math.max(inputRange[i].max,v);});
-  document.getElementById("axisReadout").textContent=axes.map((v,i)=>`${i+1}: ${v.toFixed(2)}`).join(" / ");
+const controllerInput=createControllerInput({
+  load:()=>JSON.parse(localStorage.getItem('drone.calibration.v2')||'null'),
+  save:profile=>localStorage.setItem('drone.calibration.v2',JSON.stringify(profile)),
+});
+let controllerStatus=controllerInput.update([],0);
+function pollController(dt) {
+  controllerStatus=controllerInput.update(connectedPads(),dt);
+  state.calibration=controllerStatus.calibration;
+  state.inputReady=state.developerMode || controllerStatus.canFly;
+  if(state.running && !state.developerMode && (controllerStatus.changed || !controllerStatus.canFly))pauseTraining('入力を確認できないため停止しました。接続と中立を確認してから再開してください。');
+  ui.controller.textContent=state.developerMode?'開発者モード: キーボード操作':controllerStatus.connected?`${controllerStatus.id} / ${controllerStatus.canFly?'操作確認済み':controllerStatus.compatible?'操作確認が必要':'未対応の入力'}`:'外部コントローラー未接続';
+  ui.controller.classList.toggle('ready',state.inputReady);
+  const instruction=document.getElementById('controllerInstruction');
+  if(instruction.textContent!==controllerStatus.instruction)instruction.textContent=controllerStatus.instruction;
+  document.getElementById('axisReadout').textContent=controllerStatus.axes.length===4?controllerStatus.axes.map((v,i)=>`${['左左右','左上下','右左右','右上下'][i]}: ${Number.isFinite(v)?v.toFixed(2):'読取不可'}`).join(' / '):'4軸の入力を待っています';
+  document.getElementById('controllerProgress').value=controllerStatus.canFly?8:controllerStatus.step;
+  document.getElementById('controllerProgressText').textContent=controllerStatus.canFly?'8方向・中立の確認完了':controllerStatus.hasSaved?'8方向は確認済み。保存設定の中立を再確認':`方向確認 ${controllerStatus.step}/8`;
+  const busy=state.running&&!state.paused;
+  const button=document.getElementById('calibrateButton');button.disabled=busy||!controllerStatus.compatible;
+  button.textContent=controllerStatus.hasSaved?'保存設定の中立を確認':'操作確認と校正を開始';
+  const recheck=document.getElementById('recheckButton');recheck.hidden=!controllerStatus.hasSaved;recheck.disabled=busy;
 }
 function pauseTraining(message) {
-  if(!state.running || state.paused) return;
-  state.paused=true;state.interrupted=true;state.keys.clear();
-  if("speechSynthesis" in window) speechSynthesis.cancel();
-  Object.assign(state.command,{throttle:0,forward:0,strafe:0,yaw:0});
-  document.getElementById("pauseButton").textContent="確認して再開";
+  if(!pauseFlight(state))return;
+  if(!state.developerMode){controllerInput.requireConfirmation();state.calibration=null;}
+  if('speechSynthesis' in window)speechSynthesis.cancel();
+  document.getElementById('pauseButton').textContent=state.mode==='exam'?'中断して結果を確認':'確認して再開';
   ui.examiner.textContent=message;
 }
+
 function renderHistory() {
   const list=document.getElementById("historyList");list.replaceChildren();
   for(const record of savedHistory.read().slice(0,5)) {
@@ -968,18 +938,21 @@ function renderEvents(record) {
   record.flightRecords.forEach((row,i)=>{const x=canvas.width/2+row.x_east_m*10,y=canvas.height-25-row.y_north_m*10;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();
   ctx.fillStyle="#ef6f6c";record.events.filter(e=>e.points || e.fatal || e.type==="failure-zone").forEach(e=>{ctx.beginPath();ctx.arc(canvas.width/2+e.position.x*10,canvas.height-25-e.position.z*10,4,0,Math.PI*2);ctx.fill();});
 }
-document.getElementById("calibrateButton").addEventListener("click",()=>{
-  if(state.running && !state.paused) return;
-  const pad=getGamepad(), axes=pad ? Array.from(pad.axes).slice(0,4) : [];
-  if(!calibrationValid(axes) || inputRange.some(r=>r.min>-.7 || r.max<.7)) {ui.examiner.textContent="全4軸を両端まで動かし、スティックを中立に戻してから校正してください。";return;}
-  state.calibration={id:pad.id,axes,at:new Date().toISOString()};
-  try{localStorage.setItem("drone.calibration.v1",JSON.stringify(state.calibration));}catch{}ui.examiner.textContent="中立校正を保存しました。各軸の操作方向も無料体験で確認してください。";
+document.getElementById('calibrateButton').addEventListener('click',()=>{
+  if(state.running&&!state.paused)return;
+  controllerInput.begin();pollController(0);
+});
+document.getElementById('recheckButton').addEventListener('click',()=>{
+  if(state.running&&!state.paused)return;
+  controllerInput.begin({full:true});pollController(0);
 });
 document.getElementById("subjectSelect").addEventListener("change",(event)=>{reset(event.target.value);});
 document.getElementById("pauseButton").addEventListener("click",()=>{
   if(!state.paused) {pauseTraining("一時停止しました。");return;}
-  if(!state.developerMode && (!getGamepad() || !state.calibration)) {ui.examiner.textContent="再接続と校正を完了してください。";return;}
+  pollController(0);
   if(state.mode==="exam") {state.evaluation.events.push({type:"interrupted",points:0,phase:state.phase,time:state.elapsed,position:{x:state.drone.x,z:state.drone.z}});finishExam();return;}
+  if(state.developerMode?!inputCentered(keyboardInput(state.keys)):!controllerStatus.canFly||!controllerStatus.centered){ui.examiner.textContent="接続と中立の確認を終え、操縦入力を離してから再開してください。";return;}
+  recordSessionInput(state,state.developerMode?null:state.calibration,state.developerMode?'keyboard':'controller');
   state.paused=false;state.physicsAccumulator=0;document.getElementById("pauseButton").textContent="一時停止";ui.examiner.textContent=phases[state.phase].line;
 });
 document.getElementById("focusRetryButton").addEventListener("click",()=>{

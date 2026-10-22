@@ -458,4 +458,8 @@ select {
 .stick-well i {position:absolute;left:calc(50% - 5px);top:calc(50% - 5px);width:10px;height:10px;border-radius:50%;}
 .input-stick {background:var(--accent);}.applied-stick {outline:2px solid #fff;width:14px!important;height:14px!important;margin:-2px;background:transparent;}
 .stick-monitor>small,.stick-monitor output {display:block;margin-top:12px;color:var(--muted);font-size:11px;}
+#controllerInstruction {font-size:14px;line-height:1.7;color:var(--text);border-left:2px solid var(--accent);padding-left:10px;}
+.input-progress-label {display:flex;align-items:center;gap:12px;font-size:12px;margin-bottom:8px;white-space:nowrap;}
+.input-progress-label progress {flex:1;width:auto;min-width:0;accent-color:var(--accent);}
+#controllerProgressText,#axisReadout {display:block;margin:8px 0 12px;color:var(--muted);font-size:12px;line-height:1.6;}
 @media(max-width:1150px) {.top-left {width:320px;}.top-right {top:auto;bottom:78px;left:18px;right:auto;font-size:12px;}.telemetry-status {top:18px;font-size:11px;}.course-legend {bottom:142px;}.view-controls {top:156px;}}

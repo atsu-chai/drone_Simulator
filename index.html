@@ -77,8 +77,13 @@
           <button id="developerModeButton" class="ghost-button">
             開発者モード: キーボード操作 OFF
           </button>
-          <p class="notice">4軸を両端まで動かし、中立へ戻して校正してください。</p><output id="axisReadout">コントローラーを接続してください</output>
-          <button id="calibrateButton" class="secondary-button">入力確認・中立校正</button>
+          <p class="notice">標準配置の4軸パッド向けです。対応機種は実機確認中。接続後にボタンを一度押し、画面の指示に沿ってスティックを動かしてください。</p>
+          <p id="controllerInstruction" role="status" aria-live="polite">コントローラーを接続してください。</p>
+          <label class="input-progress-label">操作確認 <progress id="controllerProgress" max="8" value="0"></progress></label>
+          <small id="controllerProgressText">方向確認 0/8</small>
+          <output id="axisReadout">4軸の入力を待っています</output>
+          <button id="calibrateButton" class="secondary-button" disabled>操作確認と校正を開始</button>
+          <button id="recheckButton" class="ghost-button" hidden>8方向を確認し直す</button>
           <p class="keyboard-help">
             W/S: 前後、A/D: 左右、E/Q: 上昇/下降、←/→: 旋回
           </p>

@@ -10,7 +10,7 @@ export function createFlightState(subject='demo') {
     checklistIndex:0,postflightIndex:0,checklistMistakes:0,startTime:0,elapsed:0,hoverTimer:0,squareTimer:0,squareIndex:0,eightIndex:0,abnormalIndex:0,emergencyHoverTimer:0,emergencyHoverPoint:null,
     taskStartTime:0,taskElapsed:0,taskTimes:{},timeLimitExceeded:null,landingDrift:0,altitudeErrorSquared:0,altitudeSampleTime:0,headingErrorSquared:0,headingSampleTime:0,hardLandingSpeed:0,boundaryViolations:0,
     responseDelays:[],respondedPhase:null,lastPhaseChange:0,physicsAccumulator:0,simulationTime:0,batteryPct:100,flightRecords:[],lastLogSecond:-1,hasTakenOff:false,groundTime:0,touchdowns:[],processedTouchdowns:0,safetyIssues:{},arc:{key:null,angle:null,travel:0},
-    arrivalTimer:0,transitLowTime:0,dangerousSpeedTime:0,coaching:{},completedSubjects:[],
+    arrivalTimer:0,transitLowTime:0,dangerousSpeedTime:0,coaching:{},completedSubjects:[],sessionCalibration:null,inputConfigurations:[],
     rawInput:{throttle:0,forward:0,strafe:0,yaw:0},command:{throttle:0,forward:0,strafe:0,yaw:0},
     drone:{x:home.x,z:home.z,y:0,vx:0,vz:0,vy:0,yaw:0,yawRate:0,roll:0,pitch:0,rollRate:0,pitchRate:0,thrustNewtons:0}};
 }
@@ -49,4 +49,19 @@ export function desiredAltitude(state) {
 export function landedAt(state,point) {
   const d=state.drone;
   return state.hasTakenOff && state.groundTime>=.3 && d.y<=.001 && Math.hypot(d.x-point.x,d.z-point.z)<.9 && Math.hypot(d.vx,d.vz)<.55;
+}
+export function pauseFlight(state) {
+  if(!state.running || state.paused)return false;
+  state.paused=true;state.interrupted=true;state.physicsAccumulator=0;
+  state.keys?.clear();
+  state.command={throttle:0,forward:0,strafe:0,yaw:0};
+  state.rawInput={throttle:0,forward:0,strafe:0,yaw:0};
+  return true;
+}
+export function recordSessionInput(state,calibration,source='controller') {
+  const previous=state.inputConfigurations.at(-1);
+  if(previous?.source===source && JSON.stringify(previous.calibration)===JSON.stringify(calibration))return;
+  const config=calibration?structuredClone(calibration):null;
+  if(state.inputConfigurations.length===0)state.sessionCalibration=config;
+  state.inputConfigurations.push({time:Number((state.simulationTime-state.startTime/1000).toFixed(3)),phase:state.phase,source,calibration:config});
 }
