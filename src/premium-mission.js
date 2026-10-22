@@ -23,7 +23,7 @@ export function createMission(deps) {
   if(state.phase === "demoLanding" && isLandedAt(takeoffPoint)) { finishExam(); return; }
 
   if (state.phase === "takeoff") {
-    if (Math.hypot(d.x,d.z)<.9 && Math.abs(d.y - 3.5) < 0.22 && Math.hypot(d.vx, d.vz, d.vy) < 0.45) {
+    if (Math.hypot(d.x-takeoffPoint.x,d.z-takeoffPoint.z)<.9 && Math.abs(d.y - 3.5) < 0.22 && Math.hypot(d.vx, d.vz, d.vy) < 0.45) {
       state.hoverTimer += dt;
     } else {
       state.hoverTimer = 0;
@@ -57,7 +57,7 @@ export function createMission(deps) {
   }
 
   if (state.phase === "eightTakeoff") {
-    if (Math.hypot(d.x,d.z)<.9 && Math.abs(d.y - 1.5) < 0.2 && Math.hypot(d.vx, d.vz, d.vy) < 0.4) {
+    if (Math.hypot(d.x-takeoffPoint.x,d.z-takeoffPoint.z)<.9 && Math.abs(d.y - 1.5) < 0.2 && Math.hypot(d.vx, d.vz, d.vy) < 0.4) {
       state.hoverTimer += dt;
     } else {
       state.hoverTimer = 0;
@@ -66,8 +66,8 @@ export function createMission(deps) {
   }
 
   if (state.phase === "eight") {
-    if(state.eightIndex>0) {
-      const key=Math.floor((state.eightIndex-1)/4);
+    {
+      const key=Math.floor(state.eightIndex/4);
       const center=course.eightCenters[key%2];
       const angle=Math.atan2(d.z-center.z,d.x-center.x);
       if(state.arc.key!==key) state.arc={key,angle,travel:0};
@@ -80,7 +80,7 @@ export function createMission(deps) {
     const target = figureEightTargets[state.eightIndex];
     if (
       target &&
-      (state.eightIndex===0 || state.arc.travel >= ((state.eightIndex-1)%4+1)*Math.PI/2 - 0.35) &&
+      (state.arc.travel >= (state.eightIndex%4+1)*Math.PI/2 - 0.35) &&
       Math.hypot(d.x - target.x, d.z - target.z) < 1 &&
       Math.abs(d.y - 1.5) < 0.4
     ) {
@@ -88,7 +88,7 @@ export function createMission(deps) {
       if (state.eightIndex >= figureEightTargets.length) {
         setPhase("eightLanding");
       } else {
-        const completedLaps = Math.max(0, Math.floor((state.eightIndex - 1) / figureEightLap.length));
+        const completedLaps = Math.max(0, Math.floor(state.eightIndex / figureEightLap.length));
         ui.examiner.textContent = `8の字飛行を継続してください。完了 ${completedLaps}/2周`;
       }
     }
@@ -100,7 +100,7 @@ export function createMission(deps) {
   }
 
   if (state.phase === "abnormalTakeoff") {
-    if (Math.hypot(d.x,d.z)<.9 && Math.abs(d.y - 3.5) < 0.25 && Math.hypot(d.vx, d.vz, d.vy) < 0.5) {
+    if (Math.hypot(d.x-takeoffPoint.x,d.z-takeoffPoint.z)<.9 && Math.abs(d.y - 3.5) < 0.25 && Math.hypot(d.vx, d.vz, d.vy) < 0.5) {
       state.hoverTimer += dt;
     } else {
       state.hoverTimer = 0;
@@ -131,8 +131,10 @@ export function createMission(deps) {
     } else {
       state.emergencyHoverTimer = 0;
     }
-    if (state.emergencyHoverTimer > 3) setPhase("landing");
+    if (state.emergencyHoverTimer > 3) setPhase("emergencyTransit");
   }
+
+  if(state.phase === "emergencyTransit" && Math.hypot(d.x-emergencyLandingPoint.x,d.z-emergencyLandingPoint.z)<.7 && Math.abs(d.y-3.5)<.4 && Math.hypot(d.vx,d.vz)<.5) setPhase("landing");
 
   if (state.phase === "landing") {
     if (d.y < 1.2) {

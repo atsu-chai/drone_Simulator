@@ -1,3 +1,7 @@
+import { flightModel, createFlightPhysics } from "./src/flight-physics.js";
+import { layouts, courseIdFor, figureEightLap, abnormalTargets } from "./src/course-layout.js";
+import { createCourseScene } from "./src/course-scene.js";
+import { createDemonstration } from "./src/demonstration.js";
 import { versions, course, squarePath, createEvaluation, evaluateSample, normalizedAxis, calibrationValid, subjects, historyStore, routeDistance } from "./src/training.js";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -66,8 +70,8 @@ const phases = {
   },
   squareLanding: {
     title: "スクエア飛行: 着陸",
-    hint: "A点へ戻り、流れを抑えて着陸してください。",
-    line: "スクエア飛行を終了し、A点へ着陸してください。",
+    hint: "A点からHへ戻り、流れを抑えて着陸してください。",
+    line: "スクエア飛行を終了し、Hへ着陸してください。",
   },
   eightTakeoff: {
     title: "8の字飛行: 離陸",
@@ -81,8 +85,8 @@ const phases = {
   },
   eightLanding: {
     title: "8の字飛行: 着陸",
-    hint: "A点へ戻り、安全に着陸してください。",
-    line: "8の字飛行を終了し、A点へ着陸してください。",
+    hint: "中央のH上空で停止して、安全に着陸してください。",
+    line: "8の字飛行を終了し、Hへ着陸してください。",
   },
   abnormalTakeoff: {
     title: "異常事態飛行: 離陸",
@@ -91,7 +95,7 @@ const phases = {
   },
   abnormal: {
     title: "異常事態の飛行",
-    hint: "機首を前方へ固定し、F–G–Fの経路を側方に1往復以上飛行してください。",
+    hint: "機首を前方へ固定し、AからB–E–Bの経路を側方に1往復以上飛行してください。",
     line: "機首方位を維持したまま、側方移動を1往復してください。",
   },
   emergencyHover: {
@@ -99,17 +103,20 @@ const phases = {
     hint: "その場で水平位置と高度3.5mを維持してください。",
     line: "緊急事態を宣言します。その場でホバリングしてください。",
   },
+  emergencyTransit: {
+    title: "緊急着陸：H上空へ移動", hint: "高度3.5mを維持し、最短経路でH上空へ移動してください。", line: "緊急着陸してください。高度を維持してHへ移動してください。"
+  },
   landing: {
     title: "緊急着陸",
-    hint: "最短経路でHのコーン横へ移動し、流れを抑えて接地してください。",
-    line: "緊急着陸してください。最短経路でHのコーン横の指定地点へ降下してください。",
+    hint: "最短経路でHへ移動し、流れを抑えて接地してください。",
+    line: "緊急着陸してください。最短経路でHの指定地点へ降下してください。",
   },
   postflight: {
     title: "飛行後点検・記録",
     hint: "機体点検と飛行記録を正しい順序で完了してください。",
     line: "飛行後点検と飛行記録を実施してください。",
   },
-  demoLanding: { title: "無料体験：着陸", hint: "A点へ静かに着陸してください。", line: "ホバリング完了。A点へ着陸してください。" },
+  demoLanding: { title: "無料体験：着陸", hint: "Hへ静かに着陸してください。", line: "ホバリング完了。Hへ着陸してください。" },
   result: {
     title: "結果",
     hint: "試験結果を確認してください。",
@@ -128,6 +135,7 @@ const phaseMission = {
   abnormalTakeoff: "abnormal",
   abnormal: "abnormal",
   emergencyHover: "abnormal",
+  emergencyTransit: "abnormal",
   landing: "abnormal",
   postflight: "postflight",
   demoLanding: "square",
@@ -137,58 +145,23 @@ const phaseMission = {
 const missionOrder = ["preflight", "square", "eight", "abnormal", "postflight", "result"];
 const taskLimits = { square: 8 * 60, eight: 8 * 60, abnormal: 6 * 60 };
 
-const squareTargets = squarePath.slice(1).map((point, index) => ({
+const squareTargets = squarePath.map((point, index) => ({
   ...point,
   key: `square${point.label}${index}`,
 }));
 
-const figureEightLap = [
-  { x: -2.5, z: 11 },
-  { x: -5, z: 8.5 },
-  { x: -2.5, z: 6 },
-  { x: 0, z: 8.5 },
-  { x: 2.5, z: 11 },
-  { x: 5, z: 8.5 },
-  { x: 2.5, z: 6 },
-  { x: 0, z: 8.5 },
-];
-
-const figureEightTargets = [
-  { x: 0, z: 8.5 },
-  ...figureEightLap,
-  ...figureEightLap,
-];
-
-const abnormalTargets = [
-  { key: "abnormalSetup", x: 0, z: 5 },
-  { key: "abnormalOut", x: -5, z: 5 },
-  { key: "abnormalReturn", x: 0, z: 5 },
-];
-
-const takeoffPoint = { x: 0, z: 0 };
-const emergencyLandingPoint = { x: -5.4, z: 2.2 };
+const figureEightTargets = [...figureEightLap, ...figureEightLap];
+const takeoffPoint = { ...layouts.square.takeoff };
+const emergencyLandingPoint = { ...layouts.abnormal.takeoff };
 const wind = { speedMps: 0, directionDeg: 30 };
 
-const flightModel = {
-  fixedStep: 1 / 120,
-  massKg: 1.15,
-  gravity: 9.81,
-  maxTilt: 28 * Math.PI / 180,
-  maxYawRate: 100 * Math.PI / 180,
-  maxClimbRate: 2.2,
-  maxDescentRate: 1.6,
-  maxThrustNewtons: 22.4,
-  motorTimeConstant: 0.16,
-  attitudeKp: 30,
-  attitudeKd: 9,
-  yawKp: 11,
-  horizontalLinearDrag: 0.12,
-  horizontalQuadraticDrag: 0.055,
-  verticalDrag: 0.18,
-};
+
 
 const state = {
   mode: "practice",
+  courseId: "square",
+  cameraMode: "overview",
+  presentation: null,
   phase: "preflight",
   running: false,
   paused: false,
@@ -235,7 +208,7 @@ const state = {
   },
   drone: {
     x: 0,
-    z: 0,
+    z: takeoffPoint.z,
     y: 0,
     vx: 0,
     vz: 0,
@@ -257,6 +230,7 @@ const world = {
   renderer: null,
   boundaryGroup: null,
   boundaryKey: null,
+  fields: {},
   scene: null,
   camera: null,
   drone: null,
@@ -288,8 +262,8 @@ function initThreeWorld() {
   world.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   world.scene = new THREE.Scene();
-  world.scene.background = new THREE.Color(0xa5bec3);
-  world.scene.fog = new THREE.Fog(0xa5b7b3, 34, 86);
+  world.scene.background = new THREE.Color(0x152126);
+  world.scene.fog = new THREE.Fog(0x152126, 60, 110);
 
   world.camera = new THREE.PerspectiveCamera(54, 1, 0.1, 120);
   world.clock = new THREE.Clock();
@@ -326,9 +300,7 @@ function loadEnvironment() {
     (texture) => {
       texture.mapping = THREE.EquirectangularReflectionMapping;
       world.scene.environment = texture;
-      world.scene.background = texture;
-      world.scene.backgroundBlurriness = 0.16;
-      world.scene.backgroundIntensity = 0.82;
+
     },
     undefined,
     (error) => console.warn("HDR環境光を読み込めませんでした。", error)
@@ -342,115 +314,16 @@ function showThreeError() {
   canvas.replaceWith(fallback);
 }
 
-function loadSurfaceTextures(folder, repeatX, repeatY) {
-  const loader = new THREE.TextureLoader();
-  const setup = (texture, color = false) => {
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(repeatX, repeatY);
-    texture.anisotropy = Math.min(8, world.renderer.capabilities.getMaxAnisotropy());
-    if (color) texture.colorSpace = THREE.SRGBColorSpace;
-    return texture;
-  };
-
-  return {
-    map: setup(loader.load(`${folder}/diffuse.jpg`), true),
-    normalMap: setup(loader.load(`${folder}/normal.jpg`)),
-    roughnessMap: setup(loader.load(`${folder}/roughness.jpg`)),
-  };
-}
-
 function buildTrainingField() {
-  const grassTextures = loadSurfaceTextures("assets/textures/grass", 7, 7);
-  const asphaltTextures = loadSurfaceTextures("assets/textures/asphalt", 5, 3);
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(90, 90),
-    new THREE.MeshStandardMaterial({
-      ...grassTextures,
-      color: 0x8da083,
-      roughness: 0.98,
-      normalScale: new THREE.Vector2(0.7, 0.7),
-    })
-  );
-  ground.rotation.x = -Math.PI / 2;
-  ground.receiveShadow = true;
-  world.scene.add(ground);
-
-  const padMat = new THREE.MeshStandardMaterial({
-    ...asphaltTextures,
-    color: 0x9a9a94,
-    roughness: 0.95,
-    normalScale: new THREE.Vector2(0.55, 0.55),
-  });
-  const lineMat = new THREE.MeshBasicMaterial({ color: 0xeef6e8 });
-  const redMat = new THREE.MeshStandardMaterial({ color: 0xef6f6c, roughness: 0.5 });
-  const blueMat = new THREE.MeshStandardMaterial({ color: 0x4aa3df, roughness: 0.65 });
-  const routeMat = new THREE.MeshBasicMaterial({ color: 0xf2c94c });
-
-  const runway = new THREE.Mesh(new THREE.PlaneGeometry(21, 13), padMat);
-  runway.rotation.x = -Math.PI / 2;
-  runway.position.set(0, 0.012, 6.5);
-  runway.receiveShadow = true;
-  world.scene.add(runway);
-
-  for (let z = 0; z <= 13; z += 2.6) {
-    addLine(THREE, -10.5, z, 10.5, z, lineMat);
+  const ground=new THREE.Mesh(new THREE.PlaneGeometry(90,90),new THREE.MeshStandardMaterial({color:0x27363b,roughness:.95}));
+  ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;world.scene.add(ground);
+  for(const id of Object.keys(layouts)) {
+    world.fields[id]=createCourseScene(id,addCourseCone);
+    world.scene.add(world.fields[id].group);
   }
-  addLine(THREE, -10.5, 0, -10.5, 13, lineMat);
-  addLine(THREE, 10.5, 0, 10.5, 13, lineMat);
-  addLine(THREE, 0, 0, 0, 13, lineMat);
-
-  for (let index = 0; index < squarePath.length - 1; index += 1) {
-    const from = squarePath[index];
-    const to = squarePath[index + 1];
-    addLine(THREE, from.x, from.z, to.x, to.z, routeMat);
-  }
-
-
-
-  addLandingPad(THREE, 0, 0);
-  // Place the takeoff marker beside the landing area, not beneath the aircraft.
-  addCourseCone(THREE, -1.45, -0.5, "A", ["squareA4", "landing"], ["square", "eight", "abnormal", "preflight", "postflight", "result"]);
-  squareTargets.filter(target => target.label !== "A").forEach(target => {
-    const offsetX = target.x > 0 ? 0.65 : -0.65;
-    addCourseCone(THREE, target.x + offsetX, target.z, target.label, [target.key], ["square"]);
-  });
-  course.eightCenters.forEach((point, index) => {
-    addCourseCone(THREE, point.x, point.z, String(index + 1), [`eight${index}`], ["eight"]);
-  });
-  addCourseCone(THREE, 0, 5.75, "F", ["abnormalSetup", "abnormalReturn"], ["abnormal"]);
-  addCourseCone(THREE, -5.75, 5, "G", ["abnormalOut"], ["abnormal"]);
-  addLine(THREE, -5, 5, 0, 5, blueMat);
-  addCourseCone(THREE, emergencyLandingPoint.x - 1.45, emergencyLandingPoint.z, "H", ["emergencyLanding"], ["abnormal"], "緊急");
-
-  addGate(THREE, -6.5, 4.5, blueMat);
-  addGate(THREE, 6.5, 12.5, blueMat);
-  addPilotStand(THREE);
-  addFence(THREE);
-  addBuildings(THREE);
-  addTrees(THREE);
 }
 
-function addLine(THREE, x1, z1, x2, z2, material) {
-  const length = Math.hypot(x2 - x1, z2 - z1);
-  const line = new THREE.Mesh(new THREE.PlaneGeometry(0.045, length), material);
-  line.rotation.x = -Math.PI / 2;
-  line.rotation.z = -Math.atan2(z2 - z1, x2 - x1) + Math.PI / 2;
-  line.position.set((x1 + x2) / 2, 0.025, (z1 + z2) / 2);
-  world.scene.add(line);
-}
-
-function addLandingPad(THREE, x, z) {
-  const pad = new THREE.Mesh(
-    new THREE.BoxGeometry(2.2, 0.045, 2.2),
-    new THREE.MeshStandardMaterial({ color: 0x58c48f, roughness: 0.7 })
-  );
-  pad.position.set(x, 0.04, z);
-  pad.receiveShadow = true;
-  world.scene.add(pad);
-}
-
-function addCourseCone(THREE, x, z, label, keys, missions, subtitle = "") {
+function addCourseCone(THREE, x, z, label, keys, missions, subtitle = "", parent = world.scene) {
   const group = new THREE.Group();
   const orange = new THREE.MeshStandardMaterial({ color: 0xf07824, roughness: 0.6 });
   const white = new THREE.MeshStandardMaterial({ color: 0xfffaf0, roughness: 0.7 });
@@ -479,6 +352,7 @@ function addCourseCone(THREE, x, z, label, keys, missions, subtitle = "") {
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.repeat.x=-1;texture.offset.x=1; // Keep text readable in the mirrored course frame.
   const labelMaterial = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
   // Repeat the identifier around the cone so it remains readable from either side.
   for (let side = 0; side < 4; side += 1) {
@@ -490,103 +364,8 @@ function addCourseCone(THREE, x, z, label, keys, missions, subtitle = "") {
   }
   group.position.set(x, 0, z);
   group.userData = { keys, missions, label };
-  world.scene.add(group);
+  parent.add(group);
   world.courseMarkers.push(group);
-}
-
-function addGate(THREE, x, z, material) {
-  const group = new THREE.Group();
-  const postGeometry = new THREE.BoxGeometry(0.12, 2.4, 0.12);
-  const crossGeometry = new THREE.BoxGeometry(2.2, 0.12, 0.12);
-  [-1, 1].forEach((side) => {
-    const post = new THREE.Mesh(postGeometry, material);
-    post.position.set(side * 1.1, 1.2, 0);
-    post.castShadow = true;
-    group.add(post);
-  });
-  const cross = new THREE.Mesh(crossGeometry, material);
-  cross.position.set(0, 2.35, 0);
-  cross.castShadow = true;
-  group.add(cross);
-  group.position.set(x, 0, z);
-  group.rotation.y = x < 0 ? 0.45 : -0.45;
-  world.scene.add(group);
-}
-
-function addPilotStand(THREE) {
-  const mat = new THREE.MeshStandardMaterial({ color: 0x222725, roughness: 0.8 });
-  const platform = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.18, 1.6), mat);
-  platform.position.set(-7.6, 0.09, -1.7);
-  platform.castShadow = true;
-  platform.receiveShadow = true;
-  world.scene.add(platform);
-
-  const pilot = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.22, 1.1, 8, 16),
-    new THREE.MeshStandardMaterial({ color: 0xf2c94c, roughness: 0.7 })
-  );
-  pilot.position.set(-7.6, 0.88, -1.7);
-  pilot.castShadow = true;
-  world.scene.add(pilot);
-}
-
-function addFence(THREE) {
-  const mat = new THREE.MeshStandardMaterial({ color: 0xdce6d7, roughness: 0.7 });
-  const postGeometry = new THREE.BoxGeometry(0.08, 1.1, 0.08);
-  for (let x = -18; x <= 18; x += 2) {
-    [-8, 23].forEach((z) => {
-      const post = new THREE.Mesh(postGeometry, mat);
-      post.position.set(x, 0.55, z);
-      post.castShadow = true;
-      world.scene.add(post);
-    });
-  }
-  for (let z = -8; z <= 23; z += 2) {
-    [-18, 18].forEach((x) => {
-      const post = new THREE.Mesh(postGeometry, mat);
-      post.position.set(x, 0.55, z);
-      post.castShadow = true;
-      world.scene.add(post);
-    });
-  }
-}
-
-function addBuildings(THREE) {
-  const mats = [
-    new THREE.MeshStandardMaterial({ color: 0x7a8c96, roughness: 0.82 }),
-    new THREE.MeshStandardMaterial({ color: 0xb9c0b4, roughness: 0.82 }),
-    new THREE.MeshStandardMaterial({ color: 0x6f8b7c, roughness: 0.82 }),
-  ];
-  [
-    [-24, 2, 4, 5, 6],
-    [24, 8, 5, 7, 4],
-    [-22, 18, 5, 4, 5],
-    [23, 20, 4, 6, 7],
-  ].forEach(([x, z, w, h, d], index) => {
-    const building = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mats[index % mats.length]);
-    building.position.set(x, h / 2, z);
-    building.castShadow = true;
-    building.receiveShadow = true;
-    world.scene.add(building);
-  });
-}
-
-function addTrees(THREE) {
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x554435, roughness: 0.9 });
-  const leafMat = new THREE.MeshStandardMaterial({ color: 0x3f7f52, roughness: 0.85 });
-  for (let i = 0; i < 26; i += 1) {
-    const angle = i * 1.91;
-    const x = Math.cos(angle) * (21 + (i % 4));
-    const z = Math.sin(angle) * (17 + (i % 5)) + 8;
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 1.4, 8), trunkMat);
-    trunk.position.set(x, 0.7, z);
-    trunk.castShadow = true;
-    world.scene.add(trunk);
-    const leaves = new THREE.Mesh(new THREE.ConeGeometry(0.9, 2.2, 12), leafMat);
-    leaves.position.set(x, 2.25, z);
-    leaves.castShadow = true;
-    world.scene.add(leaves);
-  }
 }
 
 function buildDrone() {
@@ -715,12 +494,12 @@ function resizeRenderer() {
 
 function updateThreeWorld(dt) {
   if (!state.threeReady) return;
-  updateBoundaryDisplay();
   const d = state.drone;
-  const observerDistance = phaseMission[state.phase] === "eight" ? 6.5 : 8.5;
-  world.pilotEye.set(0, 2.05, -observerDistance);
-  world.drone.position.set(d.x, d.y + 0.18, d.z);
-  world.drone.rotation.set(d.pitch, d.yaw, d.roll);
+  const layout=layouts[state.courseId];
+  for(const [id,field] of Object.entries(world.fields)) {field.group.visible=id===state.courseId;field.guides.visible=state.mode==='practice' || Boolean(state.presentation);}
+  world.pilotEye.set(layout.pilot.x, 1.65, layout.pilot.z);
+  world.drone.position.set(-d.x, d.y + 0.18, d.z);
+  world.drone.rotation.set(d.pitch, -d.yaw, -d.roll);
 
   if (world.droneMixer) {
     world.droneMixer.timeScale = clamp((d.thrustNewtons - 0.5) / 4.5, 0, 3.2);
@@ -736,15 +515,15 @@ function updateThreeWorld(dt) {
     disc.material.opacity = clamp((thrustAcceleration - 3) / 55, 0, 0.22);
   });
 
-  world.shadow.position.set(d.x, 0.04, d.z);
+  world.shadow.position.set(-d.x, 0.04, d.z);
   const shadowScale = clamp(1.15 - d.y * 0.12, 0.35, 1.15);
   world.shadow.scale.set(shadowScale, shadowScale, shadowScale);
   world.shadow.material.opacity = clamp(0.28 - d.y * 0.045, 0.07, 0.28);
 
-  const mission = phaseMission[state.phase];
-  const activeKey = state.phase === "square" ? squareTargets[state.squareIndex]?.key
-    : state.phase === "eight" && state.eightIndex > 0 ? `eight${Math.floor(((state.eightIndex - 1) % 8) / 4)}`
-    : state.phase === "abnormal" ? abnormalTargets[state.abnormalIndex]?.key
+  const mission = state.courseId;
+  const activeKey = state.phase === "square" ? `${state.courseId}:${squareTargets[state.squareIndex]?.label}`
+    : state.phase === "eight" && state.eightIndex > 0 ? `eight:${Math.floor((state.eightIndex % 8) / 4)+1}`
+    : state.phase === "abnormal" ? `abnormal:${abnormalTargets[state.abnormalIndex]?.label}`
     : ["squareLanding", "eightLanding", "demoLanding"].includes(state.phase) ? "landing"
     : state.phase === "landing" ? "emergencyLanding" : null;
   const markerMission = ["preflight", "postflight", "result"].includes(mission)
@@ -757,10 +536,19 @@ function updateThreeWorld(dt) {
     marker.children[0].material.emissive.setHex(active ? 0x572500 : 0x000000);
   }
 
-  world.camera.position.lerp(world.pilotEye, 1 - Math.exp(-dt * 5));
-  world.cameraDesiredTarget.set(d.x, Math.max(0.45, d.y + 0.28), d.z);
-  world.cameraLookTarget.lerp(world.cameraDesiredTarget, 1 - Math.exp(-dt * 7));
+  const target=new THREE.Vector3(0,0.5,layout.centerZ);
+  if(state.cameraMode==='pilot') {
+    world.camera.position.lerp(world.pilotEye,1-Math.exp(-dt*7));
+    target.set(-d.x,Math.max(.45,d.y+.18),d.z);
+  } else if(state.cameraMode==='top') {
+    world.camera.position.lerp(new THREE.Vector3(0,26,layout.centerZ-.01),1-Math.exp(-dt*5));
+  } else {
+    world.camera.position.lerp(new THREE.Vector3(12,16,layout.centerZ-19),1-Math.exp(-dt*5));
+  }
+  world.cameraLookTarget.lerp(target,1-Math.exp(-dt*7));
   world.camera.lookAt(world.cameraLookTarget);
+  updateCourseReadouts();
+
   world.renderer.render(world.scene, world.camera);
 }
 
@@ -840,6 +628,13 @@ function setPhase(phase) {
       state.taskElapsed = 0;
     }
   }
+  if(!['result','postflight'].includes(phase)) {
+    const nextCourse=courseIdFor(phase,state.subject);
+    if(state.courseId!==nextCourse) {
+      state.courseId=nextCourse;Object.assign(takeoffPoint,layouts[nextCourse].takeoff);
+      if(state.drone.y<.1) Object.assign(state.drone,{x:takeoffPoint.x,z:takeoffPoint.z,vx:0,vz:0});
+    }
+  }
   state.phase = phase;
   if (["takeoff", "eightTakeoff", "abnormalTakeoff", "emergencyHover"].includes(phase)) {
     state.hoverTimer = 0;
@@ -861,12 +656,18 @@ function setPhase(phase) {
   });
 }
 
-function reset() {
+function reset(nextSubject) {
+  const selectedSubject=typeof nextSubject==="string"?nextSubject:state.subject;
+  state.presentation=null;
+  document.getElementById("presentationControls").hidden=true;
   if(state.running && state.elapsed>0) {
     state.interrupted=true;
     state.evaluation.events.push({type:"interrupted",points:0,phase:state.phase,time:state.elapsed,position:{x:state.drone.x,z:state.drone.z}});
     finishExam();
   }
+  state.subject=selectedSubject;
+  state.courseId=courseIdFor("preflight",state.subject);
+  Object.assign(takeoffPoint,layouts[state.courseId].takeoff);
   state.phase = "preflight";
   state.running = false;
   state.paused = false;
@@ -906,7 +707,7 @@ function reset() {
   Object.assign(state.command, { throttle: 0, forward: 0, strafe: 0, yaw: 0 });
   Object.assign(state.drone, {
     x: 0,
-    z: 0,
+    z: takeoffPoint.z,
     y: 0,
     vx: 0,
     vz: 0,
@@ -923,12 +724,13 @@ function reset() {
   ui.downloadLog.disabled = true;
   ui.start.disabled = true;
   ui.start.textContent = "試験を開始";
+  ui.modeBadge.textContent=state.mode==="practice"?"練習モード":"模擬試験";
   buildChecklist();
   setPhase("preflight");
 }
 
 async function startExam() {
-  if(state.running) return;
+  if(state.running || state.presentation) return;
   if(state.subject!=="demo") {
     ui.start.disabled=true;
     try {const status=await fetch("/api/status").then(r=>r.json());accessGranted=Boolean(status.access);
@@ -1009,184 +811,7 @@ function readInput() {
   return input;
 }
 
-function updatePhysics(dt, rawInput) {
-  const d = state.drone;
-  if (state.paused) return;
-  if (state.running) state.simulationTime += dt;
-  const commandResponse = 1 - Math.exp(-dt * 10);
-  const throttleTarget = state.running ? rawInput.throttle : 0;
-  const forwardTarget = state.running ? rawInput.forward : 0;
-  const strafeTarget = state.running ? rawInput.strafe : 0;
-  const yawTarget = state.running ? rawInput.yaw : 0;
-  state.command.throttle += (throttleTarget - state.command.throttle) * commandResponse;
-  state.command.forward += (forwardTarget - state.command.forward) * commandResponse;
-  state.command.strafe += (strafeTarget - state.command.strafe) * commandResponse;
-  state.command.yaw += (yawTarget - state.command.yaw) * commandResponse;
-
-  const input = state.command;
-  const hasPilotInput =
-    Math.abs(rawInput.throttle) +
-    Math.abs(rawInput.forward) +
-    Math.abs(rawInput.strafe) +
-    Math.abs(rawInput.yaw) > 0.12;
-  if (state.running && hasPilotInput && state.respondedPhase !== state.phase) {
-    state.responseDelays.push((trainingNow() - state.lastPhaseChange) / 1000);
-    state.respondedPhase = state.phase;
-  }
-
-  if (!state.running) {
-    const settle = Math.exp(-dt * 8);
-    d.roll *= settle;
-    d.pitch *= settle;
-    d.rollRate *= settle;
-    d.pitchRate *= settle;
-    d.yawRate *= settle;
-    d.thrustNewtons *= Math.exp(-dt * 5);
-    return;
-  }
-
-  const positionHold = !["abnormalTakeoff", "abnormal", "emergencyHover", "landing"].includes(state.phase);
-  const cosYaw = Math.cos(d.yaw);
-  const sinYaw = Math.sin(d.yaw);
-  const localRightVelocity = d.vx * cosYaw - d.vz * sinYaw;
-  const localForwardVelocity = d.vx * sinYaw + d.vz * cosYaw;
-  const tiltLimit = positionHold ? flightModel.maxTilt : flightModel.maxTilt * 0.8;
-
-  let desiredPitch = input.forward * tiltLimit;
-  let desiredRoll = -input.strafe * tiltLimit;
-  if (positionHold) {
-    const forwardBrake = Math.abs(input.forward) < 0.08 ? 0.115 : 0.035;
-    const rightBrake = Math.abs(input.strafe) < 0.08 ? 0.115 : 0.035;
-    desiredPitch -= localForwardVelocity * forwardBrake;
-    desiredRoll += localRightVelocity * rightBrake;
-  } else {
-    const trim = 0.012;
-    desiredPitch += Math.sin(state.simulationTime / 2.3) * trim;
-    desiredRoll += Math.cos(state.simulationTime / 1.9) * trim;
-  }
-  desiredPitch = clamp(desiredPitch, -tiltLimit, tiltLimit);
-  desiredRoll = clamp(desiredRoll, -tiltLimit, tiltLimit);
-
-  const pitchAcceleration =
-    flightModel.attitudeKp * (desiredPitch - d.pitch) -
-    flightModel.attitudeKd * d.pitchRate;
-  const rollAcceleration =
-    flightModel.attitudeKp * (desiredRoll - d.roll) -
-    flightModel.attitudeKd * d.rollRate;
-  d.pitchRate += pitchAcceleration * dt;
-  d.rollRate += rollAcceleration * dt;
-  d.pitch += d.pitchRate * dt;
-  d.roll += d.rollRate * dt;
-
-  const desiredYawRate = input.yaw * flightModel.maxYawRate;
-  d.yawRate += (desiredYawRate - d.yawRate) * flightModel.yawKp * dt;
-  d.yaw += d.yawRate * dt;
-  if (d.yaw > Math.PI) d.yaw -= Math.PI * 2;
-  if (d.yaw < -Math.PI) d.yaw += Math.PI * 2;
-
-  const desiredVerticalVelocity =
-    input.throttle >= 0
-      ? input.throttle * flightModel.maxClimbRate
-      : input.throttle * flightModel.maxDescentRate;
-  const tiltCosine = Math.max(0.64, Math.cos(d.roll) * Math.cos(d.pitch));
-  const verticalControl = clamp((desiredVerticalVelocity - d.vy) * 4.4, -6.8, 7.5);
-  const grounded = d.y <= 0.001 && d.vy <= 0;
-  let targetThrustNewtons =
-    grounded && input.throttle <= 0.02
-      ? 0
-      : flightModel.massKg * (flightModel.gravity + verticalControl) / tiltCosine;
-  targetThrustNewtons = clamp(
-    targetThrustNewtons,
-    0,
-    flightModel.maxThrustNewtons
-  );
-  const motorResponse = 1 - Math.exp(-dt / flightModel.motorTimeConstant);
-  d.thrustNewtons +=
-    (targetThrustNewtons - d.thrustNewtons) * motorResponse;
-
-  const groundEffect =
-    d.y > 0 && d.y < 0.65
-      ? 1 + 0.1 * Math.pow(1 - d.y / 0.65, 2)
-      : 1;
-  const thrustAcceleration = d.thrustNewtons / flightModel.massKg;
-  const effectiveThrustAcceleration = thrustAcceleration * groundEffect;
-  const localRightAcceleration = -Math.sin(d.roll) * effectiveThrustAcceleration;
-  const localForwardAcceleration =
-    Math.sin(d.pitch) * Math.cos(d.roll) * effectiveThrustAcceleration;
-  const verticalAcceleration =
-    tiltCosine * effectiveThrustAcceleration -
-    flightModel.gravity -
-    d.vy * flightModel.verticalDrag;
-
-  const accelerationX =
-    localRightAcceleration * cosYaw +
-    localForwardAcceleration * sinYaw -
-    flightModel.horizontalLinearDrag * d.vx -
-    flightModel.horizontalQuadraticDrag * Math.abs(d.vx) * d.vx;
-  const accelerationZ =
-    localForwardAcceleration * cosYaw -
-    localRightAcceleration * sinYaw -
-    flightModel.horizontalLinearDrag * d.vz -
-    flightModel.horizontalQuadraticDrag * Math.abs(d.vz) * d.vz;
-
-  d.vx += accelerationX * dt;
-  d.vz += accelerationZ * dt;
-  d.vy += verticalAcceleration * dt;
-
-  const nextX = d.x + d.vx * dt;
-  const nextZ = d.z + d.vz * dt;
-  const nextY = d.y + d.vy * dt;
-  if (nextX < -10.5 || nextX > 10.5) {
-    if (Math.abs(d.vx) > 0.4) state.boundaryViolations += 1;
-    d.x = clamp(nextX, -10.5, 10.5);
-    d.vx *= -0.12;
-  } else {
-    d.x = nextX;
-  }
-  if (nextZ < -2 || nextZ > 18) {
-    if (Math.abs(d.vz) > 0.4) state.boundaryViolations += 1;
-    d.z = clamp(nextZ, -2, 18);
-    d.vz *= -0.12;
-  } else {
-    d.z = nextZ;
-  }
-  if (nextY <= 0) {
-    if (d.y > 0.01) {
-      state.hardLandingSpeed = Math.max(state.hardLandingSpeed, Math.max(0, -d.vy));
-    }
-    d.y = 0;
-    d.vy = 0;
-    const groundFriction = Math.exp(-dt * 7);
-    d.vx *= groundFriction;
-    d.vz *= groundFriction;
-  } else {
-    d.y = Math.min(nextY, 6);
-    if (d.y >= 6) d.vy = Math.min(0, d.vy);
-  }
-
-  state.batteryPct = Math.max(0, state.batteryPct - dt * 0.045);
-  const jitter = Math.abs(d.y - targetAltitude());
-  const altitudeCanBeScored =
-    (["takeoff", "abnormalTakeoff"].includes(state.phase) && d.y > 3) ||
-    (state.phase === "eightTakeoff" && d.y > 1.2) ||
-    ["square", "eight", "abnormal", "emergencyHover"].includes(state.phase);
-  if (altitudeCanBeScored) {
-    state.altitudeErrorSquared += jitter * jitter * dt;
-    state.altitudeSampleTime += dt;
-  }
-
-  const navigationTarget = currentNavigationTarget();
-  const horizontalSpeed = Math.hypot(d.vx, d.vz);
-  if (navigationTarget && horizontalSpeed > 0.25) {
-    const expectedYaw =
-      state.phase === "abnormal"
-        ? 0
-        : Math.atan2(navigationTarget.x - d.x, navigationTarget.z - d.z);
-    const headingError = angleDifference(d.yaw, expectedYaw);
-    state.headingErrorSquared += headingError * headingError * dt;
-    state.headingSampleTime += dt;
-  }
-}
+const updatePhysics = createFlightPhysics({state,clamp,trainingNow,targetAltitude,currentNavigationTarget,angleDifference});
 
 function updateMission(dt) {
   if(state.subject!=="demo") { if(premiumMission) premiumMission(dt); return; }
@@ -1197,7 +822,7 @@ function updateMission(dt) {
   if(state.elapsed>480) {state.timeLimitExceeded="square";finishExam();return;}
   const d=state.drone;
   if(state.phase==="takeoff") {
-    if(Math.hypot(d.x,d.z)<.9 && Math.abs(d.y-3.5)<.22 && Math.hypot(d.vx,d.vz,d.vy)<.45) state.hoverTimer+=dt;
+    if(Math.hypot(d.x-takeoffPoint.x,d.z-takeoffPoint.z)<.9 && Math.abs(d.y-3.5)<.22 && Math.hypot(d.vx,d.vz,d.vy)<.45) state.hoverTimer+=dt;
     else state.hoverTimer=0;
     if(state.hoverTimer>5) setPhase("demoLanding");
   } else if(state.phase==="demoLanding" && isLandedAt(takeoffPoint)) finishExam();
@@ -1306,7 +931,7 @@ function recordTelemetry() {
   if (second === state.lastLogSecond) return;
   state.lastLogSecond = second;
   const d = state.drone;
-  const positionHold = !["abnormalTakeoff", "abnormal", "emergencyHover", "landing"].includes(state.phase);
+  const positionHold = !["abnormalTakeoff", "abnormal", "emergencyHover", "emergencyTransit", "landing"].includes(state.phase);
   state.flightRecords.push({
     scenario_id: phaseMission[state.phase] === "abnormal" ? "S01_SENSOR_FAIL" : "N01_NORMAL",
     elapsed_s: second,
@@ -1366,11 +991,11 @@ function renderReadouts() {
   const remaining = taskLimits[mission] ? Math.max(0, taskLimits[mission] - state.taskElapsed) : null;
   ui.taskTime.textContent = remaining === null ? "--:--" : formatTime(remaining);
   ui.battery.textContent = `${state.batteryPct.toFixed(0)}%`;
-  const positionHold = !["abnormalTakeoff", "abnormal", "emergencyHover", "landing"].includes(state.phase);
+  const positionHold = state.presentation ? state.courseId!=="abnormal" : !["abnormalTakeoff", "abnormal", "emergencyHover", "emergencyTransit", "landing"].includes(state.phase);
   ui.stability.textContent = positionHold ? "位置安定 ON" : "位置安定 OFF";
   ui.stability.classList.toggle("warning", !positionHold);
 
-  if (state.mode === "exam" && state.running) {
+  if (state.presentation) {ui.phaseHint.textContent=state.presentation.sample?.caption || "見本を準備しています。";} else if (state.mode === "exam" && state.running) {
     ui.phaseHint.textContent = "課題終了まで減点内容は表示されません。";
   } else if (state.phase !== "result") {
     ui.phaseHint.textContent = phases[state.phase].hint;
@@ -1379,6 +1004,9 @@ function renderReadouts() {
 
 function loop() {
   const frameDt = world.clock ? Math.min(0.1, world.clock.getDelta()) : 0.016;
+  if(state.presentation) {
+    updatePresentation(frameDt);updateThreeWorld(frameDt);renderReadouts();requestAnimationFrame(loop);return;
+  }
   updateControllerStatus();
   updateInputCheck();
   if(state.running && !state.developerMode && !getGamepad()) pauseTraining("接続が切れました。再接続後に校正してください。");
@@ -1428,7 +1056,7 @@ function currentNavigationTarget() {
   if (state.phase === "eight") return figureEightTargets[state.eightIndex] || null;
   if (state.phase === "abnormal") return abnormalTargets[state.abnormalIndex] || null;
   if (["squareLanding","eightLanding","demoLanding"].includes(state.phase)) return takeoffPoint;
-  if (state.phase === "landing") return emergencyLandingPoint;
+  if (["landing","emergencyTransit"].includes(state.phase)) return emergencyLandingPoint;
   return null;
 }
 
@@ -1466,22 +1094,48 @@ window.addEventListener("gamepaddisconnected", () => {state.calibration=null;pau
 window.addEventListener("blur",()=>{state.keys.clear();pauseTraining("画面を離れたため一時停止しました。");});
 document.addEventListener("visibilitychange",()=>{if(document.hidden) {state.keys.clear();pauseTraining("画面を離れたため一時停止しました。");}});
 
-function updateBoundaryDisplay() {
-  const index=state.phase==="square"?state.squareIndex:state.phase==="eight"?state.eightIndex:state.abnormalIndex;
-  const key=`${state.phase}:${index}`;
-  if(world.boundaryKey===key) return;
-  world.boundaryKey=key;
-  if(world.boundaryGroup) {world.scene.remove(world.boundaryGroup);world.boundaryGroup.geometry.dispose();world.boundaryGroup.material.dispose();world.boundaryGroup=null;}
-  if(!["square","eight","abnormal","takeoff","eightTakeoff","abnormalTakeoff","emergencyHover"].includes(state.phase)) return;
-  const points=[],colors=[];
-  for(let x=-10;x<=10;x+=.15) for(let z=-3;z<=16;z+=.15) {
-    const distance=routeDistance({x,z},state.phase,index,state.emergencyHoverPoint || undefined);
-    const penalty=Math.abs(distance-course.penalty)<.07,fatal=Math.abs(distance-course.failure)<.07;
-    if(penalty || fatal) {points.push(x,.06,z);colors.push(...(fatal?[.94,.43,.42]:[.9,.65,.25]));}
-  }
-  const geometry=new THREE.BufferGeometry();geometry.setAttribute("position",new THREE.Float32BufferAttribute(points,3));geometry.setAttribute("color",new THREE.Float32BufferAttribute(colors,3));
-  world.boundaryGroup=new THREE.Points(geometry,new THREE.PointsMaterial({size:.09,vertexColors:true}));world.scene.add(world.boundaryGroup);
+function updateCourseReadouts() {
+  const layout=layouts[state.courseId];
+  document.getElementById("courseDimension").textContent=layout.dimensions.join(" / ");
+  const next=currentNavigationTarget();
+  document.getElementById("nextTarget").textContent=state.presentation?"見本飛行（操作・採点なし）":next?`次の目標 ${next.label || 'H'} / 残り ${Math.hypot(next.x-state.drone.x,next.z-state.drone.z).toFixed(1)}m`:"Hから開始";
 }
+function updatePresentation(dt) {
+  const player=state.presentation;
+  if(!player.paused) player.time=Math.min(player.timeline.duration,player.time+dt*player.speed);
+  const sample=player.timeline.sample(player.time);player.sample=sample;
+  state.courseId=sample.courseId;Object.assign(takeoffPoint,layouts[sample.courseId].takeoff);
+  Object.assign(state.drone,{x:sample.x,y:sample.y,z:sample.z,yaw:sample.yaw,pitch:0,roll:0,vx:sample.velocity.x,vy:sample.velocity.y,vz:sample.velocity.z,thrustNewtons:sample.y>.05?11.3:0});
+  state.elapsed=player.time;state.simulationTime=player.time;
+  ui.phaseTitle.textContent=`見本 / ${layouts[sample.courseId].title}`;
+  ui.examiner.textContent=sample.caption;
+  document.getElementById("presentationSeek").value=player.time;
+  document.getElementById("presentationTime").textContent=`${formatTime(player.time)} / ${formatTime(player.timeline.duration)}`;
+  if(player.lastStep!==sample.stepIndex) {
+    player.lastStep=sample.stepIndex;
+    if(document.getElementById("voiceEnabled").checked && 'speechSynthesis' in window) {speechSynthesis.cancel();const speech=new SpeechSynthesisUtterance(sample.caption);speech.lang='ja-JP';speechSynthesis.speak(speech);}
+  }
+  if(sample.done) {player.paused=true;document.getElementById("presentationPause").textContent="もう一度再生";}
+}
+document.getElementById("watchButton").addEventListener("click",()=>{
+  const subject=state.subject;reset();
+  const timeline=createDemonstration(subject);
+  state.presentation={timeline,time:0,speed:Number(document.getElementById("presentationSpeed").value),paused:false,lastStep:-1};
+  ui.modeBadge.textContent="解説付き見本";
+  document.getElementById("presentationControls").hidden=false;
+  document.getElementById("presentationSeek").max=timeline.duration;
+  document.getElementById("presentationPause").textContent="一時停止";
+  updatePresentation(0);
+});
+document.getElementById("presentationPause").addEventListener("click",()=>{
+  if(!state.presentation)return;const p=state.presentation;if(p.time>=p.timeline.duration)p.time=0;p.paused=!p.paused;document.getElementById("presentationPause").textContent=p.paused?"再生":"一時停止";
+  if(p.paused && 'speechSynthesis' in window)speechSynthesis.cancel();
+});
+document.getElementById("presentationSeek").addEventListener("input",event=>{if(state.presentation){state.presentation.time=Number(event.target.value);updatePresentation(0);}});
+document.getElementById("presentationSpeed").addEventListener("change",event=>{if(state.presentation)state.presentation.speed=Number(event.target.value);});
+document.getElementById("presentationStop").addEventListener("click",()=>{if('speechSynthesis'in window)speechSynthesis.cancel();reset();setMode(state.mode);});
+document.querySelectorAll("[data-camera]").forEach(button=>button.addEventListener("click",()=>{state.cameraMode=button.dataset.camera;document.querySelectorAll("[data-camera]").forEach(item=>item.classList.toggle("active",item===button));}));
+
 function getParticipantId() {
   try {let id=localStorage.getItem("drone.participant.v1");if(!id){id=crypto.randomUUID();localStorage.setItem("drone.participant.v1",id);}return id;}catch{return "unsaved";}
 }
@@ -1540,7 +1194,7 @@ document.getElementById("calibrateButton").addEventListener("click",()=>{
   state.calibration={id:pad.id,axes,at:new Date().toISOString()};
   try{localStorage.setItem("drone.calibration.v1",JSON.stringify(state.calibration));}catch{}ui.examiner.textContent="中立校正を保存しました。各軸の操作方向も無料体験で確認してください。";
 });
-document.getElementById("subjectSelect").addEventListener("change",(event)=>{reset();state.subject=event.target.value;});
+document.getElementById("subjectSelect").addEventListener("change",(event)=>{reset(event.target.value);});
 document.getElementById("pauseButton").addEventListener("click",()=>{
   if(!state.paused) {pauseTraining("一時停止しました。");return;}
   if(!state.developerMode && (!getGamepad() || !state.calibration)) {ui.examiner.textContent="再接続と校正を完了してください。";return;}

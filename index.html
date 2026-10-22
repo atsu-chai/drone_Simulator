@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ドローン国家資格 実地試験対策シミュレーター</title>
-    <link rel="stylesheet" href="styles.css?v=20260610" />
+    <link rel="stylesheet" href="styles.css?v=20261022" />
   <link rel="stylesheet" href="site.css">
   </head>
   <body>
@@ -16,6 +16,8 @@
     <main class="app-shell">
       <section class="sim-stage" aria-label="飛行訓練画面">
         <canvas id="simCanvas" width="1280" height="720"></canvas>
+        <div class="hud view-controls" role="group" aria-label="視点切替"><button data-camera="pilot">操縦者</button><button data-camera="overview" class="active">斜め俯瞰</button><button data-camera="top">真上</button></div>
+        <div class="hud course-legend"><span class="safe-key">飛行区画</span><span class="penalty-key">減点区画</span><span class="failure-key">中止区画</span><small id="courseDimension"></small><strong id="nextTarget"></strong></div>
         <div class="hud top-left">
           <span id="modeBadge">練習モード</span>
           <strong id="phaseTitle">飛行前点検</strong>
@@ -48,7 +50,10 @@
         </header>
 
         <section class="panel-section">
-          <h2>練習設定</h2><label><input id="voiceEnabled" type="checkbox"> 音声指示を有効にする</label>
+          <h2>練習設定</h2>
+          <button id="watchButton" class="primary-button">▶ 解説付きの見本飛行を見る</button>
+          <p class="notice">3科目の見本は登録・コントローラー不要。科目を選んで再生できます。</p>
+          <section id="presentationControls" hidden aria-label="見本飛行の再生操作"><div class="segmented"><button id="presentationPause">一時停止</button><button id="presentationStop">見本を終了</button></div><label class="select-label">再生位置<input id="presentationSeek" type="range" min="0" value="0" step="0.1"></label><output id="presentationTime">00:00</output><label class="select-label">再生速度<select id="presentationSpeed"><option value="1">1倍</option><option value="2">2倍</option><option value="4">4倍</option></select></label></section><label><input id="voiceEnabled" type="checkbox"> 音声指示を有効にする</label>
           <p class="notice">検証版：公式合否は未評価です。対応機器は実機確認中。実機練習を併用してください。</p>
           <label class="select-label">練習科目<select id="subjectSelect">
             <option value="demo">無料体験：離陸・ホバリング・着陸</option><option value="square">スクエア飛行</option><option value="eight">8の字飛行</option><option value="abnormal">異常事態・緊急着陸</option><option value="full">通し練習</option>
@@ -123,6 +128,6 @@
         }
       }
     </script>
-    <script type="module" src="app.js?v=20260610"></script>
+    <script type="module" src="app.js?v=20261022"></script>
   </body>
 </html>

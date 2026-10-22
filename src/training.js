@@ -1,22 +1,26 @@
-export const versions = Object.freeze({ app: '0.2.0', course: 'basic-draft-2', scoring: 'training-2', physics: '20260610', curriculum: 'basic-1' });
-export const squarePath = [{label:'A',x:0,z:0},{label:'B',x:6.5,z:0},{label:'C',x:6.5,z:5},{label:'D',x:-6.5,z:5},{label:'E',x:-6.5,z:0},{label:'A',x:0,z:0}];
-export const course = Object.freeze({ penalty: 1.5, failure: 2.5, grace: 2, squarePath, eightCenters: [{x:-2.5,z:8.5},{x:2.5,z:8.5}], eightRadius: 2.5 });
+export const versions = Object.freeze({ app: '0.3.0', course: 'mlit-basic-3', scoring: 'training-2', physics: '20260610', curriculum: 'basic-1' });
+export { squarePath } from './course-layout.js';
+import { squarePath, eightCenters, layouts, abnormalTargets, courseIdFor, fieldZone } from './course-layout.js';
+export const course = Object.freeze({ penalty: 1.5, failure: 2.5, grace: 2, squarePath, eightCenters, eightRadius: 2.5 });
 export function segmentDistance(p, a, b) {
   const dx=b.x-a.x, dz=b.z-a.z;
   const t=Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.z-a.z)*dz)/(dx*dx+dz*dz || 1)));
   return Math.hypot(p.x-a.x-t*dx,p.z-a.z-t*dz);
 }
-export function routeDistance(p, phase, index=0, anchor={x:0,z:5}) {
-  if(['takeoff','eightTakeoff','abnormalTakeoff'].includes(phase)) return Math.hypot(p.x,p.z);
+export function routeDistance(p, phase, index=0, anchor={x:0,z:0}) {
+  const layout=layouts[courseIdFor(phase)];
+  if(['takeoff','eightTakeoff','abnormalTakeoff'].includes(phase)) return Math.hypot(p.x-layout.takeoff.x,p.z-layout.takeoff.z);
   if(phase==='emergencyHover') return Math.hypot(p.x-anchor.x,p.z-anchor.z);
-  if (phase==='square') return segmentDistance(p,squarePath[Math.min(index,4)],squarePath[Math.min(index+1,5)]);
-  if (phase==='eight') {
-    // Index zero is the approach from the launch point; each lobe has four waypoints.
-    if(index===0) return segmentDistance(p,{x:0,z:0},{x:0,z:8.5});
-    const center=course.eightCenters[Math.floor(((index-1)%8)/4)];
+  if(phase==='square') {
+    const from=index===0?layouts.square.takeoff:squarePath[Math.min(index-1,4)];
+    return segmentDistance(p,from,squarePath[Math.min(index,5)]);
+  }
+  if(phase==='eight') {
+    const center=eightCenters[Math.floor((index%8)/4)];
     return Math.abs(Math.hypot(p.x-center.x,p.z-center.z)-course.eightRadius);
   }
-  if (phase==='abnormal') return index===0 ? segmentDistance(p,{x:0,z:0},{x:0,z:5}) : segmentDistance(p,{x:-5,z:5},{x:0,z:5});
+  if(phase==='abnormal') return index===0 ? segmentDistance(p,layout.takeoff,abnormalTargets[0]) : segmentDistance(p,abnormalTargets[index-1],abnormalTargets[index]);
+  if(phase==='emergencyTransit') return segmentDistance(p,anchor,layout.takeoff);
   return null;
 }
 export function createEvaluation() { return {events:[], segments:{}, fatal:false}; }
@@ -31,8 +35,10 @@ export function evaluateSample(evaluation, sample) {
     const event={type,points,phase,index,time:Number(time.toFixed(3)),position:{...position},deviation:Number(deviation.toFixed(3)),source:'training-proxy',input:sample.input,velocity:sample.velocity};
     evaluation.events.push(event); emitted.push(event);
   };
-  if(deviation>=course.failure) { evaluation.fatal=true; emit('failure-zone'); return emitted; }
-  if(deviation>=course.penalty) {
+  const transit=['square','eight','abnormal','emergencyHover','emergencyTransit'].includes(phase);
+  const zone=transit?fieldZone(position,courseIdFor(phase)):'safe';
+  if(zone==='failure') { evaluation.fatal=true; emit('failure-zone'); return emitted; }
+  if(phase!=='emergencyTransit' && !(phase==='square' && index===0) && (zone==='penalty' || deviation>=course.penalty)) {
     if(s.inside) {s.inside=false;s.entries++;s.since=time;s.penalized=false;emit('route-warning');}
     if(!s.penalized && (s.entries>1 || time-s.since>=course.grace)) {emit('route-penalty',5);s.penalized=true;}
   } else if(!s.inside) {emit('route-return');s.inside=true;}
