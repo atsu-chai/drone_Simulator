@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {coneDimensions} from './flight-safety.js';
 import { layouts, eightCenters } from './course-layout.js';
 function rectangle(width,depth,x,z,color,y=0.02) {
   const mesh=new THREE.Mesh(new THREE.PlaneGeometry(width,depth),new THREE.MeshBasicMaterial({color,toneMapped:false}));
@@ -40,10 +41,11 @@ export function createCourseScene(id,addCone) {
   }
   const pad=rectangle(2,2,layout.takeoff.x,layout.takeoff.z,0x2c9db1,.045);group.add(pad);
   const padLabel=textLabel('H',{width:1.2,background:'#2c9db1'});padLabel.position.set(layout.takeoff.x,.12,layout.takeoff.z);padLabel.material.depthTest=true;group.add(padLabel);
+  const markerLabels=new THREE.Group();group.add(markerLabels);
   for(const point of layout.markers) {
     // Mark the course point itself; H is the separate clear landing area.
     addCone(THREE,point.x,point.z,point.label,[`${id}:${point.label}`],[id],'',group);
-    const label=textLabel(point.label,{width:.75});label.position.set(point.x,1.25,point.z);group.add(label);
+    const label=textLabel(point.label,{width:.75});label.position.set(point.x,coneDimensions.height+.24,point.z);markerLabels.add(label);
   }
   const guides=new THREE.Group();guides.name='learning-guides';
   let route=[];
@@ -61,10 +63,11 @@ export function createCourseScene(id,addCone) {
   if(id==='abnormal')guides.add(new THREE.ArrowHelper(new THREE.Vector3(-1,0,0),new THREE.Vector3(-6.5+.65,.12,0),.65,0x8fe3f4,.25,.18));
   if(id!=='eight') guides.add(line([layout.takeoff,{x:0,z:0}],0x8fe3f4,true));
   guides.add(line([{...layout.takeoff,y:.12},{...layout.takeoff,y:layout.altitude}],0x8fe3f4,true));
-  const height=textLabel(`高度 ${layout.altitude.toFixed(1)}m`,{width:2.6});height.position.set(layout.routeWidth/2+2.2,layout.altitude+.35,layout.centerZ);guides.add(height);
-  const dimension=textLabel(layout.dimensions[0],{width:4.8});dimension.position.set(0,.6,layout.centerZ+layout.fieldDepth/2+.75);guides.add(dimension);
-  const distance=textLabel(layout.dimensions[1],{width:4.2});distance.position.set(0,.5,layout.pilot.z-1.1);guides.add(distance);
+  const annotations=new THREE.Group();guides.add(annotations);
+  const height=textLabel(`高度 ${layout.altitude.toFixed(1)}m`,{width:2.6});height.position.set(layout.routeWidth/2+2.2,layout.altitude+.35,layout.centerZ);annotations.add(height);
+  const dimension=textLabel(layout.dimensions[0],{width:4.8});dimension.position.set(0,.6,layout.centerZ+layout.fieldDepth/2+.75);annotations.add(dimension);
+  const distance=textLabel(layout.dimensions[1],{width:4.2});distance.position.set(0,.5,layout.pilot.z-1.1);annotations.add(distance);
   group.add(guides);
   group.add(person(-.65,layout.pilot.z,0xd75b5a,'試験員'),person(.65,layout.pilot.z,0x42c4d8,'受験者'));
-  return {group,guides,layout};
+  return {group,guides,annotations,markerLabels,layout};
 }

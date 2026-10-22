@@ -1,5 +1,5 @@
 import {layouts} from './course-layout.js';
-export const coneDimensions=Object.freeze({height:1.01,bodyHeight:.9,bodyBottom:.11,baseWidth:.8,baseHeight:.11,baseRadius:.34,tipRadius:.055});
+export const coneDimensions=Object.freeze({height:.5,bodyHeight:.45,bodyBottom:.05,baseWidth:.5,baseHeight:.05,baseRadius:.21,tipRadius:.034});
 export const safetyLimits=Object.freeze({rotorRadius:.32,airframeHalfHeight:.15,dangerousSpeed:5,speedHold:.25,maximumAltitude:8});
 export function touchesCone(position,marker) {
   const centerY=position.y+.18;

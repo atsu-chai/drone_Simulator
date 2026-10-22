@@ -18,7 +18,7 @@ export function createDemonstration(subject='square') {
     const move=(point,phase,caption,heading=true)=>{
       const to={...point,y:layout.altitude};
       const nextYaw=heading?Math.atan2(to.x-position.x,to.z-position.z):0;
-      step(position,1,'turn',heading?'機首を進行方向へ合わせます。':'機首は前方のまま。旋回せず側方へ移動します。',{yaw:nextYaw});
+      step(position,1,'turn',heading?'機首を進行方向へ合わせます。':'機首を前方へ向けたまま、次の区間へ移ります。',{yaw:nextYaw});
       step(to,Math.max(1,Math.hypot(to.x-position.x,to.z-position.z)/1.1),phase,caption,{yaw:nextYaw});
     };
     if(id==='square') {
@@ -32,7 +32,7 @@ export function createDemonstration(subject='square') {
         step({...layout.takeoff,y:1.5},16,'eight',`${lap+1}周目。${lobe+1}番コーンを囲み、機首を進行方向へ向けて円弧を飛行します。`,{arc:{center:eightCenters[lobe],fromAngle,sign},yaw:yawStart});
       }
     } else {
-      for(const point of abnormalTargets) move(point,'abnormal',`${point.label}点へ側方移動。位置安定OFFのため、流れを早めに抑えます。`,false);
+      for(const [index,point] of abnormalTargets.entries()) move(point,'abnormal',index===0?'A点へ準備移動します。機首を前方へ向けたまま、高度3.5mを保ちます。':`${point.label}点へ側方移動。位置安定OFFのため、流れを早めに抑えます。`,false);
       step(position,3,'emergencyHover','緊急事態発生。その場で停止し、位置と高度を保ちます。');
       move(layout.takeoff,'emergencyTransit','緊急着陸指示。高度3.5mを維持したまま、最短経路でH上空へ移動します。',false);
     }

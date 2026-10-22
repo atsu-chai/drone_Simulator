@@ -247,12 +247,12 @@ function addCourseCone(THREE, x, z, label, keys, missions, subtitle = "", parent
   const group = new THREE.Group();
   const orange = new THREE.MeshStandardMaterial({ color: 0xf07824, roughness: 0.6 });
   const white = new THREE.MeshStandardMaterial({ color: 0xfffaf0, roughness: 0.7 });
-  const base = new THREE.Mesh(new THREE.BoxGeometry(coneDimensions.baseWidth, 0.08, coneDimensions.baseWidth), orange);
-  base.position.y = 0.07;
+  const base = new THREE.Mesh(new THREE.BoxGeometry(coneDimensions.baseWidth, coneDimensions.baseHeight, coneDimensions.baseWidth), orange);
+  base.position.y = coneDimensions.baseHeight / 2;
   const body = new THREE.Mesh(new THREE.CylinderGeometry(coneDimensions.tipRadius, coneDimensions.baseRadius, coneDimensions.bodyHeight, 32), orange);
-  body.position.y = 0.56;
-  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.145, 0.195, 0.16, 32), white);
-  band.position.y = 0.66;
+  body.position.y = coneDimensions.bodyBottom + coneDimensions.bodyHeight / 2;
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(coneDimensions.baseRadius*.43, coneDimensions.baseRadius*.57, coneDimensions.bodyHeight*.18, 32), white);
+  band.position.y = coneDimensions.bodyBottom + coneDimensions.bodyHeight*.66;
   [base, body, band].forEach(mesh => { mesh.castShadow = true; mesh.receiveShadow = true; group.add(mesh); });
 
   const canvas = document.createElement("canvas");
@@ -277,9 +277,11 @@ function addCourseCone(THREE, x, z, label, keys, missions, subtitle = "", parent
   // Repeat the identifier around the cone so it remains readable from either side.
   for (let side = 0; side < 4; side += 1) {
     const angle = side * Math.PI / 2;
-    const face = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.36), labelMaterial);
-    face.position.set(Math.sin(angle) * 0.27, 0.35, Math.cos(angle) * 0.27);
-    face.rotation.set(-Math.atan2(0.285, 0.9), angle, 0, "YXZ");
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(coneDimensions.bodyHeight*.4, coneDimensions.bodyHeight*.4), labelMaterial);
+    const labelY=coneDimensions.bodyHeight*.27;
+    const radius=coneDimensions.baseRadius-(coneDimensions.baseRadius-coneDimensions.tipRadius)*.27+.006;
+    face.position.set(Math.sin(angle)*radius, coneDimensions.bodyBottom+labelY, Math.cos(angle)*radius);
+    face.rotation.set(-Math.atan2(coneDimensions.baseRadius-coneDimensions.tipRadius, coneDimensions.bodyHeight), angle, 0, "YXZ");
     group.add(face);
   }
   group.position.set(x, 0, z);
@@ -418,7 +420,13 @@ function updateThreeWorld(dt) {
   if (!state.threeReady) return;
   const d = state.drone;
   const layout=layouts[state.courseId];
-  for(const [id,field] of Object.entries(world.fields)) {field.group.visible=id===state.courseId;field.guides.visible=state.mode==='practice' || Boolean(state.presentation);}
+  for(const [id,field] of Object.entries(world.fields)) {
+    field.group.visible=id===state.courseId;
+    // Keep the real cone lettering; floating captions would hide a landed aircraft.
+    field.annotations.visible=state.cameraMode!=='pilot';
+    field.markerLabels.visible=state.cameraMode!=='pilot';
+    field.guides.visible=state.mode==='practice' || Boolean(state.presentation);
+  }
   world.pilotEye.set(layout.pilot.x, 1.65, layout.pilot.z);
   world.drone.position.set(-d.x, d.y + 0.18, d.z);
   world.drone.rotation.set(d.pitch, -d.yaw, -d.roll);
@@ -459,19 +467,22 @@ function updateThreeWorld(dt) {
     marker.children[0].material.emissive.setHex(active ? 0x572500 : 0x000000);
   }
 
+  const cameraBlend=world.snapCamera?1:1-Math.exp(-dt*7);
+  const positionBlend=world.snapCamera?1:1-Math.exp(-dt*5);
   const target=new THREE.Vector3(0,0.5,layout.centerZ);
   if(state.cameraMode==='pilot') {
-    world.camera.position.lerp(world.pilotEye,1-Math.exp(-dt*7));
+    world.camera.position.lerp(world.pilotEye,cameraBlend);
     target.set(-d.x,Math.max(.45,d.y+.18),d.z);
   } else if(state.cameraMode==='top') {
     // Include the pilot and dimension captions below the course, clear of HUDs.
     const centerZ=(layout.pilot.z-1.5+layout.centerZ+layout.fieldDepth/2+1)/2;
     target.set(0,0,centerZ);
-    world.camera.position.lerp(new THREE.Vector3(0,32.5,centerZ-.01),1-Math.exp(-dt*5));
+    world.camera.position.lerp(new THREE.Vector3(0,32.5,centerZ-.01),positionBlend);
   } else {
-    world.camera.position.lerp(new THREE.Vector3(12,16,layout.centerZ-19),1-Math.exp(-dt*5));
+    world.camera.position.lerp(new THREE.Vector3(12,16,layout.centerZ-19),positionBlend);
   }
-  world.cameraLookTarget.lerp(target,1-Math.exp(-dt*7));
+  world.cameraLookTarget.lerp(target,cameraBlend);
+  world.snapCamera=false;
   world.camera.lookAt(world.cameraLookTarget);
   updateCourseReadouts();
 
@@ -876,10 +887,10 @@ document.getElementById("presentationPause").addEventListener("click",()=>{
   if(!state.presentation)return;const p=state.presentation;if(p.time>=p.timeline.duration)p.time=0;p.paused=!p.paused;document.getElementById("presentationPause").textContent=p.paused?"再生":"一時停止";
   if(p.paused && 'speechSynthesis' in window)speechSynthesis.cancel();
 });
-document.getElementById("presentationSeek").addEventListener("input",event=>{if(state.presentation){state.presentation.time=Number(event.target.value);updatePresentation(0);}});
+document.getElementById("presentationSeek").addEventListener("input",event=>{if(state.presentation){state.presentation.time=Number(event.target.value);world.snapCamera=true;updatePresentation(0);}});
 document.getElementById("presentationSpeed").addEventListener("change",event=>{if(state.presentation)state.presentation.speed=Number(event.target.value);});
 document.getElementById("presentationStop").addEventListener("click",()=>{if('speechSynthesis'in window)speechSynthesis.cancel();reset();setMode(state.mode);});
-document.querySelectorAll("[data-camera]").forEach(button=>button.addEventListener("click",()=>{state.cameraMode=button.dataset.camera;document.querySelectorAll("[data-camera]").forEach(item=>item.classList.toggle("active",item===button));}));
+document.querySelectorAll("[data-camera]").forEach(button=>button.addEventListener("click",()=>{state.cameraMode=button.dataset.camera;world.snapCamera=true;document.querySelectorAll("[data-camera]").forEach(item=>item.classList.toggle("active",item===button));}));
 
 function getParticipantId() {
   try {let id=localStorage.getItem("drone.participant.v1");if(!id){id=crypto.randomUUID();localStorage.setItem("drone.participant.v1",id);}return id;}catch{return "unsaved";}
