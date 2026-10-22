@@ -31,7 +31,7 @@ export const layouts = {
 };
 export function courseIdFor(phase, subject='demo') {
   if(phase.startsWith('eight')) return 'eight';
-  if(['abnormalTakeoff','abnormal','emergencyHover','emergencyTransit','landing'].includes(phase)) return 'abnormal';
+  if(['abnormalTakeoff','abnormal','emergencyHover','emergencyTransit','emergencyArrival','landing'].includes(phase)) return 'abnormal';
   if(['preflight','result','postflight'].includes(phase)) return ['eight','abnormal'].includes(subject) ? subject : 'square';
   return 'square';
 }
@@ -48,7 +48,7 @@ export function fieldZone(point, id) {
   return 'safe';
 }
 export function expectedHeading(phase, position, index, target) {
-  if(['abnormal','emergencyHover','emergencyTransit','landing'].includes(phase)) return 0;
+  if(['abnormal','emergencyHover','emergencyTransit','emergencyArrival','landing'].includes(phase)) return 0;
   if(phase==='eight') {
     const lobe=Math.floor((index%8)/4),sign=lobe===0?1:-1;
     const center=eightCenters[lobe];

@@ -14,6 +14,14 @@ export function createMission(deps) {
     }
   }
   recordTelemetry();
+  // H lies on the lateral-flight boundary. Enter the arrival phase before
+  // evaluating that boundary; stopping above H still precedes descent.
+  if(state.phase === "emergencyTransit" && Math.hypot(d.x-emergencyLandingPoint.x,d.z-emergencyLandingPoint.z)<.7 && Math.abs(d.y-3.5)<.4) setPhase("emergencyArrival");
+  if(state.phase === "emergencyArrival") {
+    const settled=Math.hypot(d.x-emergencyLandingPoint.x,d.z-emergencyLandingPoint.z)<.7 && Math.abs(d.y-3.5)<.4 && Math.hypot(d.vx,d.vz,d.vy)<.5;
+    state.arrivalTimer=settled?(state.arrivalTimer||0)+dt:0;
+    if(state.arrivalTimer>=.5)setPhase("landing");
+  }
   const index = state.phase === "square" ? state.squareIndex : state.phase === "eight" ? state.eightIndex : state.abnormalIndex;
   const events = evaluateSample(state.evaluation, {phase:state.phase,index,anchor:state.emergencyHoverPoint,time:state.elapsed,position:{x:d.x,y:d.y,z:d.z},input:{...state.command},velocity:{x:d.vx,y:d.vy,z:d.vz}});
   for (const event of events) {
@@ -133,8 +141,6 @@ export function createMission(deps) {
     }
     if (state.emergencyHoverTimer > 3) setPhase("emergencyTransit");
   }
-
-  if(state.phase === "emergencyTransit" && Math.hypot(d.x-emergencyLandingPoint.x,d.z-emergencyLandingPoint.z)<.7 && Math.abs(d.y-3.5)<.4 && Math.hypot(d.vx,d.vz)<.5) setPhase("landing");
 
   if (state.phase === "landing") {
     if (d.y < 1.2) {

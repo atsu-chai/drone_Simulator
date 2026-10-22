@@ -1,4 +1,4 @@
-export const versions = Object.freeze({ app: '0.3.0', course: 'mlit-basic-3', scoring: 'training-2', physics: '20260610', curriculum: 'basic-1' });
+export const versions = Object.freeze({ app: '0.4.0', course: 'mlit-basic-3', scoring: 'training-3', physics: '20261022', curriculum: 'basic-1' });
 export { squarePath } from './course-layout.js';
 import { squarePath, eightCenters, layouts, abnormalTargets, courseIdFor, fieldZone } from './course-layout.js';
 export const course = Object.freeze({ penalty: 1.5, failure: 2.5, grace: 2, squarePath, eightCenters, eightRadius: 2.5 });
@@ -11,6 +11,7 @@ export function routeDistance(p, phase, index=0, anchor={x:0,z:0}) {
   const layout=layouts[courseIdFor(phase)];
   if(['takeoff','eightTakeoff','abnormalTakeoff'].includes(phase)) return Math.hypot(p.x-layout.takeoff.x,p.z-layout.takeoff.z);
   if(phase==='emergencyHover') return Math.hypot(p.x-anchor.x,p.z-anchor.z);
+  if(phase==='emergencyArrival') return Math.hypot(p.x-layout.takeoff.x,p.z-layout.takeoff.z);
   if(phase==='square') {
     const from=index===0?layouts.square.takeoff:squarePath[Math.min(index-1,4)];
     return segmentDistance(p,from,squarePath[Math.min(index,5)]);
@@ -36,9 +37,11 @@ export function evaluateSample(evaluation, sample) {
     evaluation.events.push(event); emitted.push(event);
   };
   const transit=['square','eight','abnormal','emergencyHover','emergencyTransit'].includes(phase);
-  const zone=transit?fieldZone(position,courseIdFor(phase)):'safe';
+  const arrival=phase==='emergencyArrival';
+  const zone=arrival && deviation<1 ? 'safe' : transit || arrival ? fieldZone(position,courseIdFor(phase)) : 'safe';
   if(zone==='failure') { evaluation.fatal=true; emit('failure-zone'); return emitted; }
-  if(phase!=='emergencyTransit' && !(phase==='square' && index===0) && (zone==='penalty' || deviation>=course.penalty)) {
+  const outsideArrival=phase==='emergencyArrival' && deviation>=1;
+  if(outsideArrival || (phase!=='emergencyTransit' && !(phase==='square' && index===0) && (zone==='penalty' || deviation>=course.penalty))) {
     if(s.inside) {s.inside=false;s.entries++;s.since=time;s.penalized=false;emit('route-warning');}
     if(!s.penalized && (s.entries>1 || time-s.since>=course.grace)) {emit('route-penalty',5);s.penalized=true;}
   } else if(!s.inside) {emit('route-return');s.inside=true;}

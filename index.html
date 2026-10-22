@@ -82,6 +82,15 @@
           <p class="keyboard-help">
             W/S: 前後、A/D: 左右、E/Q: 上昇/下降、←/→: 旋回
           </p>
+          <div class="stick-monitor" aria-label="Mode 2の操縦入力">
+            <p id="inputMonitorStatus">入力待ち</p>
+            <div class="stick-pair">
+              <div><span>左：高度・旋回</span><div class="stick-well"><i id="leftApplied" class="applied-stick"></i><i id="leftStick" class="input-stick"></i></div><small>上昇 E / 下降 Q</small></div>
+              <div><span>右：前後・左右</span><div class="stick-well"><i id="rightApplied" class="applied-stick"></i><i id="rightStick" class="input-stick"></i></div><small>前 W / 後 S / 左 A / 右 D</small></div>
+            </div>
+            <small>● 入力　○ 機体への指令（反応の遅れを含む）</small>
+            <output id="inputValues">高度 0%・旋回 0%・前後 0%・左右 0%</output>
+          </div>
         </section>
 
         <section class="panel-section" id="checklistPanel">

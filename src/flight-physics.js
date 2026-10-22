@@ -19,6 +19,7 @@ export const flightModel = {
 export function createFlightPhysics({state,clamp,trainingNow,targetAltitude,currentNavigationTarget,angleDifference}) {
   return function updatePhysics(dt, rawInput) {
   const d = state.drone;
+  state.rawInput={...rawInput};
   if (state.paused) return;
   if (state.running) state.simulationTime += dt;
   const commandResponse = 1 - Math.exp(-dt * 10);
@@ -53,7 +54,7 @@ export function createFlightPhysics({state,clamp,trainingNow,targetAltitude,curr
     return;
   }
 
-  const positionHold = !["abnormalTakeoff", "abnormal", "emergencyHover", "emergencyTransit", "landing"].includes(state.phase);
+  const positionHold = !["abnormalTakeoff", "abnormal", "emergencyHover", "emergencyTransit", "emergencyArrival", "landing"].includes(state.phase);
   const cosYaw = Math.cos(d.yaw);
   const sinYaw = Math.sin(d.yaw);
   const localRightVelocity = d.vx * cosYaw - d.vz * sinYaw;
@@ -99,10 +100,14 @@ export function createFlightPhysics({state,clamp,trainingNow,targetAltitude,curr
   const tiltCosine = Math.max(0.64, Math.cos(d.roll) * Math.cos(d.pitch));
   const verticalControl = clamp((desiredVerticalVelocity - d.vy) * 4.4, -6.8, 7.5);
   const grounded = d.y <= 0.001 && d.vy <= 0;
+  const groundEffect =
+    d.y > 0 && d.y < 0.65
+      ? 1 + 0.1 * Math.pow(1 - d.y / 0.65, 2)
+      : 1;
   let targetThrustNewtons =
     grounded && input.throttle <= 0.02
       ? 0
-      : flightModel.massKg * (flightModel.gravity + verticalControl) / tiltCosine;
+      : flightModel.massKg * (flightModel.gravity + verticalControl) / (tiltCosine * groundEffect);
   targetThrustNewtons = clamp(
     targetThrustNewtons,
     0,
@@ -112,10 +117,6 @@ export function createFlightPhysics({state,clamp,trainingNow,targetAltitude,curr
   d.thrustNewtons +=
     (targetThrustNewtons - d.thrustNewtons) * motorResponse;
 
-  const groundEffect =
-    d.y > 0 && d.y < 0.65
-      ? 1 + 0.1 * Math.pow(1 - d.y / 0.65, 2)
-      : 1;
   const thrustAcceleration = d.thrustNewtons / flightModel.massKg;
   const effectiveThrustAcceleration = thrustAcceleration * groundEffect;
   const localRightAcceleration = -Math.sin(d.roll) * effectiveThrustAcceleration;
@@ -147,8 +148,13 @@ export function createFlightPhysics({state,clamp,trainingNow,targetAltitude,curr
   // Trial-area departure is evaluated by the current course, not invisible walls.
   d.x = nextX;
   d.z = nextZ;
+  if(d.y>.15)state.hasTakenOff=true;
   if (nextY <= 0) {
-    if (d.y > 0.01) {
+    state.groundTime=(state.groundTime||0)+dt;
+    if(d.y>0 && state.hasTakenOff) {
+      (state.touchdowns ||= []).push({phase:state.phase,time:state.simulationTime,x:nextX,z:nextZ,descentSpeed:Math.max(0,-d.vy),horizontalSpeed:Math.hypot(d.vx,d.vz)});
+    }
+    if (d.y > 0) {
       state.hardLandingSpeed = Math.max(state.hardLandingSpeed, Math.max(0, -d.vy));
     }
     d.y = 0;
@@ -157,8 +163,8 @@ export function createFlightPhysics({state,clamp,trainingNow,targetAltitude,curr
     d.vx *= groundFriction;
     d.vz *= groundFriction;
   } else {
-    d.y = Math.min(nextY, 6);
-    if (d.y >= 6) d.vy = Math.min(0, d.vy);
+    state.groundTime=0;
+    d.y = nextY;
   }
 
   state.batteryPct = Math.max(0, state.batteryPct - dt * 0.045);
@@ -166,7 +172,7 @@ export function createFlightPhysics({state,clamp,trainingNow,targetAltitude,curr
   const altitudeCanBeScored =
     (["takeoff", "abnormalTakeoff"].includes(state.phase) && d.y > 3) ||
     (state.phase === "eightTakeoff" && d.y > 1.2) ||
-    ["square", "eight", "abnormal", "emergencyHover", "emergencyTransit"].includes(state.phase);
+    ["square", "eight", "abnormal", "emergencyHover", "emergencyTransit", "emergencyArrival"].includes(state.phase);
   if (altitudeCanBeScored) {
     state.altitudeErrorSquared += jitter * jitter * dt;
     state.altitudeSampleTime += dt;

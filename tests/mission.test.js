@@ -36,7 +36,7 @@ test('ten ideal full runs traverse all missions and finish, not merely waypoint 
     assert.equal(state.phase,'eightLanding');move(deps.takeoffPoint,0);move(deps.takeoffPoint,3.5);for(let i=0;i<610;i++)tick();assert.equal(state.phase,'abnormal');
     for(const point of deps.abnormalTargets)move(point,3.5);
     for(let i=0;i<370;i++)tick();assert.equal(state.phase,'emergencyTransit');
-    move(deps.emergencyLandingPoint,3.5);assert.equal(state.phase,'landing');
+    move(deps.emergencyLandingPoint,3.5);for(let i=0;i<61;i++)tick();assert.equal(state.phase,'landing');
     move(deps.emergencyLandingPoint,0);assert.equal(state.phase,'result');assert.equal(state.evaluation.fatal,false);
   }
 });

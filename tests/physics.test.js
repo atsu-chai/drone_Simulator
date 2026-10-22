@@ -7,6 +7,19 @@ function harness(phase='eight') {
   return {state,step};
 }
 const neutral={throttle:0,forward:0,strafe:0,yaw:0};
+test('gentle commanded descent reaches physical ground despite ground effect',()=>{
+  const h=harness('eightLanding');h.state.drone.y=.3;h.state.drone.vz=0;
+  for(let i=0;i<120*5;i++)h.step(flightModel.fixedStep,{...neutral,throttle:-.18/flightModel.maxDescentRate});
+  assert.equal(h.state.drone.y,0);
+  assert.ok(h.state.groundTime>.3);
+  assert.equal(h.state.touchdowns.length,1);
+  assert.ok(h.state.touchdowns[0].descentSpeed<.3);
+});
+test('sub-millimetre final descent still records the touchdown exactly once',()=>{
+  const h=harness('eightLanding');Object.assign(h.state.drone,{y:.0005,vy:-.1,vz:0});h.state.hasTakenOff=true;
+  for(let i=0;i<60;i++)h.step(flightModel.fixedStep,{...neutral,throttle:-.2});
+  assert.equal(h.state.touchdowns.length,1);assert.equal(h.state.drone.y,0);
+});
 test('real physics allows legitimate eight route beyond the former invisible wall',()=>{
   const h=harness();for(let i=0;i<12;i++)h.step(flightModel.fixedStep,neutral);assert.ok(h.state.drone.z< -2.5);assert.ok(h.state.drone.vz<0);
 });

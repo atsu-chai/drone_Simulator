@@ -1,8 +1,11 @@
+import {advanceFlightFrame} from './src/flight-frame.js';
+import {createFlightState, transitionFlightPhase, navigationTarget, desiredAltitude, landedAt, phaseMission, taskLimits, squareTargets, figureEightTargets} from "./src/session-rules.js";
+import {evaluateFlightSafety, safetyMessages, coneDimensions} from "./src/flight-safety.js";
 import { flightModel, createFlightPhysics } from "./src/flight-physics.js";
-import { layouts, courseIdFor, figureEightLap, abnormalTargets } from "./src/course-layout.js";
+import { layouts, figureEightLap, abnormalTargets } from "./src/course-layout.js";
 import { createCourseScene } from "./src/course-scene.js";
 import { createDemonstration } from "./src/demonstration.js";
-import { versions, course, squarePath, createEvaluation, evaluateSample, normalizedAxis, calibrationValid, subjects, historyStore, routeDistance } from "./src/training.js";
+import { versions, course, evaluateSample, normalizedAxis, calibrationValid, subjects, historyStore } from "./src/training.js";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
@@ -10,6 +13,9 @@ import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
 const canvas = document.getElementById("simCanvas");
 
 const ui = {
+  inputStatus: document.getElementById("inputMonitorStatus"),
+  inputValues: document.getElementById("inputValues"),
+  sticks: ["leftStick", "rightStick", "leftApplied", "rightApplied"].map(id=>document.getElementById(id)),
   modeBadge: document.getElementById("modeBadge"),
   phaseTitle: document.getElementById("phaseTitle"),
   phaseHint: document.getElementById("phaseHint"),
@@ -106,6 +112,7 @@ const phases = {
   emergencyTransit: {
     title: "緊急着陸：H上空へ移動", hint: "高度3.5mを維持し、最短経路でH上空へ移動してください。", line: "緊急着陸してください。高度を維持してHへ移動してください。"
   },
+  emergencyArrival: { title: "緊急着陸：H上空で停止", hint: "高度3.5mを保ち、H上空で水平移動を止めてください。", line: "H上空に到着しました。高度を保って停止してください。" },
   landing: {
     title: "緊急着陸",
     hint: "最短経路でHへ移動し、流れを抑えて接地してください。",
@@ -124,33 +131,7 @@ const phases = {
   },
 };
 
-const phaseMission = {
-  preflight: "preflight",
-  takeoff: "square",
-  square: "square",
-  squareLanding: "square",
-  eightTakeoff: "eight",
-  eight: "eight",
-  eightLanding: "eight",
-  abnormalTakeoff: "abnormal",
-  abnormal: "abnormal",
-  emergencyHover: "abnormal",
-  emergencyTransit: "abnormal",
-  landing: "abnormal",
-  postflight: "postflight",
-  demoLanding: "square",
-  result: "result",
-};
-
 const missionOrder = ["preflight", "square", "eight", "abnormal", "postflight", "result"];
-const taskLimits = { square: 8 * 60, eight: 8 * 60, abnormal: 6 * 60 };
-
-const squareTargets = squarePath.map((point, index) => ({
-  ...point,
-  key: `square${point.label}${index}`,
-}));
-
-const figureEightTargets = [...figureEightLap, ...figureEightLap];
 const takeoffPoint = { ...layouts.square.takeoff };
 const emergencyLandingPoint = { ...layouts.abnormal.takeoff };
 const wind = { speedMps: 0, directionDeg: 30 };
@@ -158,72 +139,8 @@ const wind = { speedMps: 0, directionDeg: 30 };
 
 
 const state = {
-  mode: "practice",
-  courseId: "square",
-  cameraMode: "overview",
-  presentation: null,
-  phase: "preflight",
-  running: false,
-  paused: false,
-  subject: "demo",
-  calibration: null,
-  evaluation: createEvaluation(),
-  interrupted: false,
-  developerMode: false,
-  checklistIndex: 0,
-  postflightIndex: 0,
-  checklistMistakes: 0,
-  startTime: 0,
-  elapsed: 0,
-  hoverTimer: 0,
-  squareTimer: 0,
-  squareIndex: 0,
-  eightIndex: 0,
-  abnormalIndex: 0,
-  emergencyHoverTimer: 0,
-  taskStartTime: 0,
-  taskElapsed: 0,
-  taskTimes: {},
-  timeLimitExceeded: null,
-  landingDrift: 0,
-  altitudeErrorSquared: 0,
-  altitudeSampleTime: 0,
-  headingErrorSquared: 0,
-  headingSampleTime: 0,
-  hardLandingSpeed: 0,
-  boundaryViolations: 0,
-  responseDelays: [],
-  respondedPhase: null,
-  lastPhaseChange: 0,
-  physicsAccumulator: 0,
-  simulationTime: 0,
-  batteryPct: 100,
-  flightRecords: [],
-  lastLogSecond: -1,
-  command: {
-    throttle: 0,
-    forward: 0,
-    strafe: 0,
-    yaw: 0,
-  },
-  drone: {
-    x: 0,
-    z: takeoffPoint.z,
-    y: 0,
-    vx: 0,
-    vz: 0,
-    vy: 0,
-    yaw: 0,
-    yawRate: 0,
-    roll: 0,
-    pitch: 0,
-    rollRate: 0,
-    pitchRate: 0,
-    thrustNewtons: 0,
-  },
-  keys: new Set(),
-  inputReady: false,
-  threeReady: false,
+  ...createFlightState(), mode: "practice", cameraMode: "overview", presentation: null,
+  calibration: null, developerMode: false, keys: new Set(), inputReady: false, threeReady: false,
 };
 
 const world = {
@@ -327,9 +244,9 @@ function addCourseCone(THREE, x, z, label, keys, missions, subtitle = "", parent
   const group = new THREE.Group();
   const orange = new THREE.MeshStandardMaterial({ color: 0xf07824, roughness: 0.6 });
   const white = new THREE.MeshStandardMaterial({ color: 0xfffaf0, roughness: 0.7 });
-  const base = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.08, 0.8), orange);
+  const base = new THREE.Mesh(new THREE.BoxGeometry(coneDimensions.baseWidth, 0.08, coneDimensions.baseWidth), orange);
   base.position.y = 0.07;
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.34, 0.9, 32), orange);
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(coneDimensions.tipRadius, coneDimensions.baseRadius, coneDimensions.bodyHeight, 32), orange);
   body.position.y = 0.56;
   const band = new THREE.Mesh(new THREE.CylinderGeometry(0.145, 0.195, 0.16, 32), white);
   band.position.y = 0.66;
@@ -617,30 +534,9 @@ function setMode(mode) {
 }
 
 function setPhase(phase) {
-  const previousMission = phaseMission[state.phase];
-  const nextMission = phaseMission[phase];
-  if (previousMission !== nextMission) {
-    if (taskLimits[previousMission]) {
-      state.taskTimes[previousMission] = state.taskElapsed;
-    }
-    if (taskLimits[nextMission]) {
-      state.taskStartTime = trainingNow();
-      state.taskElapsed = 0;
-    }
-  }
-  if(!['result','postflight'].includes(phase)) {
-    const nextCourse=courseIdFor(phase,state.subject);
-    if(state.courseId!==nextCourse) {
-      state.courseId=nextCourse;Object.assign(takeoffPoint,layouts[nextCourse].takeoff);
-      if(state.drone.y<.1) Object.assign(state.drone,{x:takeoffPoint.x,z:takeoffPoint.z,vx:0,vz:0});
-    }
-  }
-  state.phase = phase;
-  if (["takeoff", "eightTakeoff", "abnormalTakeoff", "emergencyHover"].includes(phase)) {
-    state.hoverTimer = 0;
-  }
-  state.lastPhaseChange = trainingNow();
-  state.respondedPhase = null;
+  transitionFlightPhase(state,phase);
+  Object.assign(takeoffPoint,layouts[state.courseId].takeoff);
+  const nextMission=phaseMission[phase];
   const copy = phases[phase];
   ui.phaseTitle.textContent = copy.title;
   ui.phaseHint.textContent = copy.hint;
@@ -665,61 +561,10 @@ function reset(nextSubject) {
     state.evaluation.events.push({type:"interrupted",points:0,phase:state.phase,time:state.elapsed,position:{x:state.drone.x,z:state.drone.z}});
     finishExam();
   }
-  state.subject=selectedSubject;
-  state.courseId=courseIdFor("preflight",state.subject);
+  Object.assign(state,createFlightState(selectedSubject));
   Object.assign(takeoffPoint,layouts[state.courseId].takeoff);
-  state.phase = "preflight";
-  state.running = false;
-  state.paused = false;
-  state.interrupted = false;
-  state.evaluation = createEvaluation();
-  state.emergencyHoverPoint=null;
-  state.arc = { key: null, angle: null, travel: 0 };
+  state.keys.clear();
   document.getElementById("pauseButton").hidden = true;
-  state.checklistIndex = 0;
-  state.postflightIndex = 0;
-  state.checklistMistakes = 0;
-  state.elapsed = 0;
-  state.hoverTimer = 0;
-  state.squareTimer = 0;
-  state.squareIndex = 0;
-  state.eightIndex = 0;
-  state.abnormalIndex = 0;
-  state.emergencyHoverTimer = 0;
-  state.taskStartTime = 0;
-  state.taskElapsed = 0;
-  state.taskTimes = {};
-  state.timeLimitExceeded = null;
-  state.landingDrift = 0;
-  state.altitudeErrorSquared = 0;
-  state.altitudeSampleTime = 0;
-  state.headingErrorSquared = 0;
-  state.headingSampleTime = 0;
-  state.hardLandingSpeed = 0;
-  state.boundaryViolations = 0;
-  state.responseDelays = [];
-  state.respondedPhase = null;
-  state.physicsAccumulator = 0;
-  state.simulationTime = 0;
-  state.batteryPct = 100;
-  state.flightRecords = [];
-  state.lastLogSecond = -1;
-  Object.assign(state.command, { throttle: 0, forward: 0, strafe: 0, yaw: 0 });
-  Object.assign(state.drone, {
-    x: 0,
-    z: takeoffPoint.z,
-    y: 0,
-    vx: 0,
-    vz: 0,
-    vy: 0,
-    yaw: 0,
-    yawRate: 0,
-    roll: 0,
-    pitch: 0,
-    rollRate: 0,
-    pitchRate: 0,
-    thrustNewtons: 0,
-  });
   ui.resultPanel.hidden = true;
   ui.downloadLog.disabled = true;
   ui.start.disabled = true;
@@ -814,6 +659,9 @@ function readInput() {
 const updatePhysics = createFlightPhysics({state,clamp,trainingNow,targetAltitude,currentNavigationTarget,angleDifference});
 
 function updateMission(dt) {
+  if(!state.running || state.paused)return;
+  evaluateFlightSafety(state,dt);
+  if(state.evaluation.fatal){state.elapsed=(trainingNow()-state.startTime)/1000;finishExam();return;}
   if(state.subject!=="demo") { if(premiumMission) premiumMission(dt); return; }
   if(!state.running || state.paused) return;
   state.elapsed=(trainingNow()-state.startTime)/1000;
@@ -828,14 +676,7 @@ function updateMission(dt) {
   } else if(state.phase==="demoLanding" && isLandedAt(takeoffPoint)) finishExam();
 }
 
-function isLandedAt(point) {
-  const d = state.drone;
-  return (
-    Math.hypot(d.x - point.x, d.z - point.z) < 0.9 &&
-    d.y < 0.08 &&
-    Math.hypot(d.vx, d.vz) < 0.55
-  );
-}
+function isLandedAt(point) { return landedAt(state,point); }
 
 function finishExam() {
   state.running = false;
@@ -845,7 +686,9 @@ function finishExam() {
   const feedback = [];
   let score = 100 - state.evaluation.events.reduce((total,event)=>total+event.points,0);
   if(state.evaluation.events.some(event=>event.type==="route-penalty")) feedback.push("経路逸脱を記録しました。航跡を確認し、区間の途中でも経路を維持してください。");
-  if(state.evaluation.fatal) feedback.push("練習用の中止区画に入りました。減速と経路維持を単科目で練習してください。");
+  if(state.evaluation.fatal && state.evaluation.events.some(event=>event.type==='failure-zone')) feedback.push("練習用の中止区画に入りました。減速と経路維持を単科目で練習してください。");
+  const safetyFeedback=state.evaluation.events.filter(event=>safetyMessages[event.type]).map(event=>safetyMessages[event.type]);
+  feedback.unshift(...new Set(safetyFeedback));
   const altitudeRms =
     state.altitudeSampleTime > 0
       ? Math.sqrt(state.altitudeErrorSquared / state.altitudeSampleTime)
@@ -878,11 +721,9 @@ function finishExam() {
     feedback.push("異常事態の飛行で指定側方移動を完了できていません。安定機能が弱い状態での惰性を早めに抑えてください。");
   }
   if (state.landingDrift > 0.9) {
-    score -= 18;
     feedback.push("着陸時に機体が流れる傾向があります。接地前に水平速度を十分に落としてください。");
   }
   if (state.hardLandingSpeed > 1.5) {
-    score -= fatalLanding ? 100 : 18;
     feedback.push(`接地時の降下速度が${state.hardLandingSpeed.toFixed(1)}m/sです。接地直前の降下率を抑えてください。`);
   }
   if (state.boundaryViolations > 0) {
@@ -931,7 +772,7 @@ function recordTelemetry() {
   if (second === state.lastLogSecond) return;
   state.lastLogSecond = second;
   const d = state.drone;
-  const positionHold = !["abnormalTakeoff", "abnormal", "emergencyHover", "emergencyTransit", "landing"].includes(state.phase);
+  const positionHold = !["abnormalTakeoff", "abnormal", "emergencyHover", "emergencyTransit", "emergencyArrival", "landing"].includes(state.phase);
   state.flightRecords.push({
     scenario_id: phaseMission[state.phase] === "abnormal" ? "S01_SENSOR_FAIL" : "N01_NORMAL",
     elapsed_s: second,
@@ -991,7 +832,7 @@ function renderReadouts() {
   const remaining = taskLimits[mission] ? Math.max(0, taskLimits[mission] - state.taskElapsed) : null;
   ui.taskTime.textContent = remaining === null ? "--:--" : formatTime(remaining);
   ui.battery.textContent = `${state.batteryPct.toFixed(0)}%`;
-  const positionHold = state.presentation ? state.courseId!=="abnormal" : !["abnormalTakeoff", "abnormal", "emergencyHover", "emergencyTransit", "landing"].includes(state.phase);
+  const positionHold = state.presentation ? state.courseId!=="abnormal" : !["abnormalTakeoff", "abnormal", "emergencyHover", "emergencyTransit", "emergencyArrival", "landing"].includes(state.phase);
   ui.stability.textContent = positionHold ? "位置安定 ON" : "位置安定 OFF";
   ui.stability.classList.toggle("warning", !positionHold);
 
@@ -1002,25 +843,27 @@ function renderReadouts() {
   }
 }
 
+function renderInputMonitor(input) {
+  const preview=Boolean(state.presentation);
+  const applied=state.running && !state.paused ? state.command : {yaw:0,throttle:0,strafe:0,forward:0};
+  const raw=preview ? {yaw:0,throttle:0,strafe:0,forward:0} : input;
+  const points=[[raw.yaw,raw.throttle],[raw.strafe,raw.forward],[applied.yaw,applied.throttle],[applied.strafe,applied.forward]];
+  points.forEach(([x,y],i)=>{ui.sticks[i].style.transform=`translate(${x*34}px,${-y*34}px)`;});
+  ui.inputStatus.textContent=preview ? "見本飛行：操縦入力は使いません" : state.paused ? "一時停止：機体への指令は停止中" : getGamepad() ? "コントローラー入力" : state.developerMode ? "キーボード入力" : "コントローラーを接続してください";
+  ui.inputValues.textContent=`高度 ${Math.round(raw.throttle*100)}%・旋回 ${Math.round(raw.yaw*100)}%・前後 ${Math.round(raw.forward*100)}%・左右 ${Math.round(raw.strafe*100)}%`;
+}
+
 function loop() {
   const frameDt = world.clock ? Math.min(0.1, world.clock.getDelta()) : 0.016;
   if(state.presentation) {
-    updatePresentation(frameDt);updateThreeWorld(frameDt);renderReadouts();requestAnimationFrame(loop);return;
+    updatePresentation(frameDt);updateThreeWorld(frameDt);renderReadouts();renderInputMonitor({});requestAnimationFrame(loop);return;
   }
   updateControllerStatus();
   updateInputCheck();
   if(state.running && !state.developerMode && !getGamepad()) pauseTraining("接続が切れました。再接続後に校正してください。");
   const input = readInput();
-  state.physicsAccumulator = Math.min(
-    state.physicsAccumulator + frameDt,
-    flightModel.fixedStep * 12
-  );
-  while (state.physicsAccumulator >= flightModel.fixedStep) {
-    if(state.paused) {state.physicsAccumulator=0;break;}
-    updatePhysics(flightModel.fixedStep, input);
-    updateMission(flightModel.fixedStep);
-    state.physicsAccumulator -= flightModel.fixedStep;
-  }
+  renderInputMonitor(input);
+  advanceFlightFrame(state,frameDt,input,updatePhysics,updateMission);
   updateThreeWorld(frameDt);
   renderReadouts();
   requestAnimationFrame(loop);
@@ -1051,21 +894,8 @@ function angleDifference(a, b) {
   return Math.atan2(Math.sin(a - b), Math.cos(a - b));
 }
 
-function currentNavigationTarget() {
-  if (state.phase === "square") return squareTargets[state.squareIndex] || null;
-  if (state.phase === "eight") return figureEightTargets[state.eightIndex] || null;
-  if (state.phase === "abnormal") return abnormalTargets[state.abnormalIndex] || null;
-  if (["squareLanding","eightLanding","demoLanding"].includes(state.phase)) return takeoffPoint;
-  if (["landing","emergencyTransit"].includes(state.phase)) return emergencyLandingPoint;
-  return null;
-}
-
-function targetAltitude() {
-  if (["eightTakeoff", "eight"].includes(state.phase)) return 1.5;
-  if (["squareLanding", "eightLanding", "demoLanding", "landing"].includes(state.phase)) return 0;
-  if (["preflight", "postflight", "result"].includes(state.phase)) return state.drone.y;
-  return 3.5;
-}
+function currentNavigationTarget() { return navigationTarget(state); }
+function targetAltitude() { return desiredAltitude(state); }
 
 ui.modeButtons.forEach((button) => {
   button.addEventListener("click", () => setMode(button.dataset.mode));
@@ -1179,7 +1009,7 @@ function renderHistory() {
 }
 function renderEvents(record) {
   const target=document.getElementById("eventList");target.replaceChildren();
-  const labels={"route-warning":"経路への復帰指示","route-penalty":"経路逸脱","route-return":"経路に復帰","failure-zone":"中止区画への侵入"};
+  const labels={...safetyMessages,"route-warning":"経路への復帰指示","route-penalty":"経路逸脱","route-return":"経路に復帰","failure-zone":"中止区画への侵入"};
   for(const event of record.events) {const li=document.createElement("li");li.textContent=`${event.time.toFixed(1)}秒 / ${event.phase} / ${labels[event.type] || event.type} / (${event.position.x.toFixed(1)}, ${event.position.z.toFixed(1)})m`;target.append(li);}
   if(!target.children.length) target.textContent="記録された経路イベントはありません。公式の全項目を評価した結果ではありません。";
   const canvas=document.getElementById("trackCanvas"),ctx=canvas.getContext("2d");ctx.clearRect(0,0,canvas.width,canvas.height);
