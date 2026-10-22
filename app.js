@@ -91,7 +91,7 @@ const phases = {
   },
   abnormal: {
     title: "異常事態の飛行",
-    hint: "機首を前方へ固定し、指定経路を側方に1往復以上飛行してください。",
+    hint: "機首を前方へ固定し、F–G–Fの経路を側方に1往復以上飛行してください。",
     line: "機首方位を維持したまま、側方移動を1往復してください。",
   },
   emergencyHover: {
@@ -101,8 +101,8 @@ const phases = {
   },
   landing: {
     title: "緊急着陸",
-    hint: "最短経路で緊急着陸地点へ移動し、流れを抑えて接地してください。",
-    line: "緊急着陸してください。最短経路で指定地点へ降下してください。",
+    hint: "最短経路でHのコーン横へ移動し、流れを抑えて接地してください。",
+    line: "緊急着陸してください。最短経路でHのコーン横の指定地点へ降下してください。",
   },
   postflight: {
     title: "飛行後点検・記録",
@@ -265,7 +265,7 @@ const world = {
   shadow: null,
   propellers: [],
   rotorDiscs: [],
-  targetRings: {},
+  courseMarkers: [],
   clock: null,
   cameraLookTarget: null,
   cameraDesiredTarget: null,
@@ -383,12 +383,9 @@ function buildTrainingField() {
     normalScale: new THREE.Vector2(0.55, 0.55),
   });
   const lineMat = new THREE.MeshBasicMaterial({ color: 0xeef6e8 });
-  const yellowMat = new THREE.MeshStandardMaterial({ color: 0xf2c94c, roughness: 0.6 });
   const redMat = new THREE.MeshStandardMaterial({ color: 0xef6f6c, roughness: 0.5 });
   const blueMat = new THREE.MeshStandardMaterial({ color: 0x4aa3df, roughness: 0.65 });
   const routeMat = new THREE.MeshBasicMaterial({ color: 0xf2c94c });
-  const penaltyMat = new THREE.MeshBasicMaterial({ color: 0xe5a640, transparent: true, opacity: 0.75 });
-  const failMat = new THREE.MeshBasicMaterial({ color: 0xef6f6c, transparent: true, opacity: 0.75 });
 
   const runway = new THREE.Mesh(new THREE.PlaneGeometry(21, 13), padMat);
   runway.rotation.x = -Math.PI / 2;
@@ -411,23 +408,20 @@ function buildTrainingField() {
 
 
 
-  addLandingPad(THREE, 0, 0, "着陸");
-  squareTargets.forEach((target) => addTargetRing(THREE, target.x, target.z, 0.8, yellowMat, target.key));
-  addPole(THREE, -2.5, 8.5, redMat);
-  addPole(THREE, 2.5, 8.5, redMat);
-  addTargetRing(THREE, -2.5, 8.5, 2.5, redMat, "left");
-  addTargetRing(THREE, 2.5, 8.5, 2.5, redMat, "right");
-  addTargetRing(THREE, 0, 8.5, 0.7, blueMat, "eightGuide");
-  abnormalTargets.forEach((target) => addTargetRing(THREE, target.x, target.z, 0.9, blueMat, target.key));
+  addLandingPad(THREE, 0, 0);
+  // Place the takeoff marker beside the landing area, not beneath the aircraft.
+  addCourseCone(THREE, -1.45, -0.5, "A", ["squareA4", "landing"], ["square", "eight", "abnormal", "preflight", "postflight", "result"]);
+  squareTargets.filter(target => target.label !== "A").forEach(target => {
+    const offsetX = target.x > 0 ? 0.65 : -0.65;
+    addCourseCone(THREE, target.x + offsetX, target.z, target.label, [target.key], ["square"]);
+  });
+  course.eightCenters.forEach((point, index) => {
+    addCourseCone(THREE, point.x, point.z, String(index + 1), [`eight${index}`], ["eight"]);
+  });
+  addCourseCone(THREE, 0, 5.75, "F", ["abnormalSetup", "abnormalReturn"], ["abnormal"]);
+  addCourseCone(THREE, -5.75, 5, "G", ["abnormalOut"], ["abnormal"]);
   addLine(THREE, -5, 5, 0, 5, blueMat);
-  addTargetRing(
-    THREE,
-    emergencyLandingPoint.x,
-    emergencyLandingPoint.z,
-    1.1,
-    redMat,
-    "emergencyLanding"
-  );
+  addCourseCone(THREE, emergencyLandingPoint.x - 1.45, emergencyLandingPoint.z, "H", ["emergencyLanding"], ["abnormal"], "緊急");
 
   addGate(THREE, -6.5, 4.5, blueMat);
   addGate(THREE, 6.5, 12.5, blueMat);
@@ -435,15 +429,6 @@ function buildTrainingField() {
   addFence(THREE);
   addBuildings(THREE);
   addTrees(THREE);
-}
-
-function addRectangleBoundary(THREE, width, depth, centerZ, material) {
-  const halfWidth = width / 2;
-  const halfDepth = depth / 2;
-  addLine(THREE, -halfWidth, centerZ - halfDepth, halfWidth, centerZ - halfDepth, material);
-  addLine(THREE, halfWidth, centerZ - halfDepth, halfWidth, centerZ + halfDepth, material);
-  addLine(THREE, halfWidth, centerZ + halfDepth, -halfWidth, centerZ + halfDepth, material);
-  addLine(THREE, -halfWidth, centerZ + halfDepth, -halfWidth, centerZ - halfDepth, material);
 }
 
 function addLine(THREE, x1, z1, x2, z2, material) {
@@ -457,41 +442,56 @@ function addLine(THREE, x1, z1, x2, z2, material) {
 
 function addLandingPad(THREE, x, z) {
   const pad = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.15, 1.15, 0.045, 64),
-    new THREE.MeshStandardMaterial({ color: 0x58c48f, roughness: 0.55 })
+    new THREE.BoxGeometry(2.2, 0.045, 2.2),
+    new THREE.MeshStandardMaterial({ color: 0x58c48f, roughness: 0.7 })
   );
   pad.position.set(x, 0.04, z);
   pad.receiveShadow = true;
   world.scene.add(pad);
-
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(1.15, 0.035, 10, 64),
-    new THREE.MeshBasicMaterial({ color: 0xf7fff8 })
-  );
-  ring.rotation.x = Math.PI / 2;
-  ring.position.set(x, 0.08, z);
-  world.scene.add(ring);
-  world.targetRings.landing = ring;
 }
 
-function addTargetRing(THREE, x, z, radius, material, key) {
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.04, 12, 72), material);
-  ring.rotation.x = Math.PI / 2;
-  ring.position.set(x, 0.09, z);
-  world.scene.add(ring);
-  world.targetRings[key] = ring;
-}
+function addCourseCone(THREE, x, z, label, keys, missions, subtitle = "") {
+  const group = new THREE.Group();
+  const orange = new THREE.MeshStandardMaterial({ color: 0xf07824, roughness: 0.6 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xfffaf0, roughness: 0.7 });
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.08, 0.8), orange);
+  base.position.y = 0.07;
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.34, 0.9, 32), orange);
+  body.position.y = 0.56;
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.145, 0.195, 0.16, 32), white);
+  band.position.y = 0.66;
+  [base, body, band].forEach(mesh => { mesh.castShadow = true; mesh.receiveShadow = true; group.add(mesh); });
 
-function addPole(THREE, x, z, material) {
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.2, 16), material);
-  pole.position.set(x, 1.1, z);
-  pole.castShadow = true;
-  world.scene.add(pole);
-
-  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.22, 24, 16), material);
-  cap.position.set(x, 2.26, z);
-  cap.castShadow = true;
-  world.scene.add(cap);
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 256;
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#fffaf0";
+  context.fillRect(0, 0, 256, 256);
+  context.fillStyle = "#202521";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.font = "bold 184px system-ui, sans-serif";
+  context.fillText(label, 128, subtitle ? 107 : 133);
+  if (subtitle) {
+    context.font = "bold 44px system-ui, sans-serif";
+    context.fillText(subtitle, 128, 221);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const labelMaterial = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+  // Repeat the identifier around the cone so it remains readable from either side.
+  for (let side = 0; side < 4; side += 1) {
+    const angle = side * Math.PI / 2;
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.36), labelMaterial);
+    face.position.set(Math.sin(angle) * 0.27, 0.35, Math.cos(angle) * 0.27);
+    face.rotation.set(-Math.atan2(0.285, 0.9), angle, 0, "YXZ");
+    group.add(face);
+  }
+  group.position.set(x, 0, z);
+  group.userData = { keys, missions, label };
+  world.scene.add(group);
+  world.courseMarkers.push(group);
 }
 
 function addGate(THREE, x, z, material) {
@@ -741,22 +741,21 @@ function updateThreeWorld(dt) {
   world.shadow.scale.set(shadowScale, shadowScale, shadowScale);
   world.shadow.material.opacity = clamp(0.28 - d.y * 0.045, 0.07, 0.28);
 
-  Object.entries(world.targetRings).forEach(([key, ring]) => {
-    const currentSquare = squareTargets[state.squareIndex]?.key;
-    const currentAbnormal = abnormalTargets[state.abnormalIndex]?.key;
-    const currentEight = figureEightTargets[state.eightIndex];
-    if (key === "eightGuide" && currentEight) {
-      ring.position.set(currentEight.x, 0.09, currentEight.z);
-    }
-    const active =
-      (state.phase === "square" && key === currentSquare) ||
-      (state.phase === "eight" && key === "eightGuide") ||
-      (state.phase === "abnormal" && key === currentAbnormal) ||
-      ((state.phase === "squareLanding" || state.phase === "eightLanding") && key === "landing") ||
-      (state.phase === "landing" && key === "emergencyLanding");
-    ring.visible = state.mode === "practice" && (key !== "eightGuide" || state.phase === "eight");
-    ring.scale.setScalar(active ? 1 + Math.sin(trainingNow() / 180) * 0.04 : 1);
-  });
+  const mission = phaseMission[state.phase];
+  const activeKey = state.phase === "square" ? squareTargets[state.squareIndex]?.key
+    : state.phase === "eight" && state.eightIndex > 0 ? `eight${Math.floor(((state.eightIndex - 1) % 8) / 4)}`
+    : state.phase === "abnormal" ? abnormalTargets[state.abnormalIndex]?.key
+    : ["squareLanding", "eightLanding", "demoLanding"].includes(state.phase) ? "landing"
+    : state.phase === "landing" ? "emergencyLanding" : null;
+  const markerMission = ["preflight", "postflight", "result"].includes(mission)
+    ? state.subject === "eight" ? "eight" : state.subject === "abnormal" ? "abnormal" : "square"
+    : mission;
+  for (const marker of world.courseMarkers) {
+    marker.visible = marker.userData.missions.includes(markerMission);
+    const active = state.mode === "practice" && marker.userData.keys.includes(activeKey);
+    // Fixed physical markers stay visible in mock exams; only practice adds a highlight.
+    marker.children[0].material.emissive.setHex(active ? 0x572500 : 0x000000);
+  }
 
   world.camera.position.lerp(world.pilotEye, 1 - Math.exp(-dt * 5));
   world.cameraDesiredTarget.set(d.x, Math.max(0.45, d.y + 0.28), d.z);
@@ -1243,7 +1242,7 @@ function finishExam() {
   }
   if (["full","square"].includes(state.subject) && state.squareIndex < squareTargets.length) {
     score -= 14;
-    feedback.push("スクエア飛行の指定経路を完了できていません。次のリングを見失わないよう、進行方向と高度を保ってください。");
+    feedback.push("スクエア飛行の指定経路を完了できていません。次の文字入りコーンを目印に、進行方向と高度を保ってください。");
   }
   if (["full","eight"].includes(state.subject) && state.eightIndex < figureEightTargets.length) {
     score -= 14;
