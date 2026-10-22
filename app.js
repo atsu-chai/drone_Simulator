@@ -154,6 +154,8 @@ const world = {
   fields: {},
   scene: null,
   camera: null,
+  insetCamera: null,
+  insetRect: null,
   drone: null,
   droneFallback: null,
   droneMixer: null,
@@ -187,6 +189,8 @@ function initThreeWorld() {
   world.scene.fog = new THREE.Fog(0x152126, 60, 110);
 
   world.camera = new THREE.PerspectiveCamera(54, 1, 0.1, 120);
+  world.insetCamera=new THREE.PerspectiveCamera(34,1,.1,20);
+  world.insetCamera.layers.set(1);
   world.clock = new THREE.Clock();
   world.cameraLookTarget = new THREE.Vector3(0, 1, 0);
   world.cameraDesiredTarget = new THREE.Vector3(0, 1, 0);
@@ -194,6 +198,7 @@ function initThreeWorld() {
   world.camera.position.copy(world.pilotEye);
 
   const hemi = new THREE.HemisphereLight(0xd8f0ff, 0x465044, 0.55);
+  hemi.layers.enable(1);
   world.scene.add(hemi);
 
   const sun = new THREE.DirectionalLight(0xfff2d2, 2.8);
@@ -204,6 +209,7 @@ function initThreeWorld() {
   sun.shadow.camera.right = 36;
   sun.shadow.camera.top = 36;
   sun.shadow.camera.bottom = -36;
+  sun.layers.enable(1);
   world.scene.add(sun);
 
   loadEnvironment();
@@ -382,6 +388,7 @@ function buildDrone() {
   world.shadow.position.y = 0.035;
   world.scene.add(world.shadow);
 
+  group.traverse(child=>child.layers.enable(1));
   world.drone = group;
   world.droneFallback = fallback;
   world.drone.rotation.order = "YXZ";
@@ -408,6 +415,7 @@ function loadDroneModel() {
         });
       });
 
+      model.traverse(child=>child.layers.enable(1));
       world.drone.add(model);
       world.droneFallback.visible = false;
       world.propellers = [];
@@ -431,6 +439,8 @@ function resizeRenderer() {
   world.renderer.setSize(width, height, false);
   world.camera.aspect = width / height;
   world.camera.updateProjectionMatrix();
+  const inset=document.getElementById('aircraftInsetViewport').getBoundingClientRect();
+  world.insetRect={x:inset.left-rect.left,y:rect.bottom-inset.bottom,width:inset.width,height:inset.height};
 }
 
 function updateThreeWorld(dt) {
@@ -503,7 +513,30 @@ function updateThreeWorld(dt) {
   world.camera.lookAt(world.cameraLookTarget);
   updateCourseReadouts();
 
-  world.renderer.render(world.scene, world.camera);
+  const renderer=world.renderer;
+  const teachingView=state.mode==='practice' || Boolean(state.presentation);
+  const zoomControl=document.getElementById('aircraftZoomEnabled');
+  zoomControl.disabled=!teachingView;
+  const showInset=teachingView && zoomControl.checked;
+  const insetPanel=document.getElementById('aircraftInset');
+  if(insetPanel.dataset.view!==state.cameraMode) {insetPanel.dataset.view=state.cameraMode;if(showInset)resizeRenderer();}
+  if(insetPanel.hidden===showInset) {insetPanel.hidden=!showInset;if(showInset)resizeRenderer();}
+  renderer.setViewport(0,0,canvas.clientWidth,canvas.clientHeight);
+  renderer.render(world.scene, world.camera);
+  if(showInset && world.insetRect?.width>0) {
+    const box=world.insetRect,camera=world.insetCamera;
+    camera.aspect=box.width/box.height;camera.updateProjectionMatrix();
+    camera.position.copy(world.drone.position).add(new THREE.Vector3(0,2.8,-2.8));
+    camera.lookAt(world.drone.position);
+    // Render the same animated aircraft and heading arrow; layer 1 excludes the course.
+    renderer.setViewport(box.x,box.y,box.width,box.height);
+    renderer.setScissor(box.x,box.y,box.width,box.height);renderer.setScissorTest(true);
+    const updateShadows=renderer.shadowMap.autoUpdate;renderer.shadowMap.autoUpdate=false;
+    renderer.render(world.scene,camera);
+    renderer.shadowMap.autoUpdate=updateShadows;renderer.setScissorTest(false);
+    renderer.setViewport(0,0,canvas.clientWidth,canvas.clientHeight);
+    document.getElementById('insetHeading').textContent=`${Math.round(((d.yaw*180/Math.PI)%360+360)%360)}°`;
+  }
 }
 
 function buildChecklist() {

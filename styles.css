@@ -463,3 +463,15 @@ select {
 .input-progress-label progress {flex:1;width:auto;min-width:0;accent-color:var(--accent);}
 #controllerProgressText,#axisReadout {display:block;margin:8px 0 12px;color:var(--muted);font-size:12px;line-height:1.6;}
 @media(max-width:1150px) {.top-left {width:320px;}.top-right {top:auto;bottom:78px;left:18px;right:auto;font-size:12px;}.telemetry-status {top:18px;font-size:11px;}.course-legend {bottom:142px;}.view-controls {top:156px;}}
+
+.inset-toggle {display:flex;align-items:center;gap:5px;padding:0 8px;font-size:12px;white-space:nowrap;color:var(--text);}
+.inset-toggle input {accent-color:var(--accent);width:15px;height:15px;margin:0;}
+.aircraft-inset {right:18px;top:144px;width:220px;overflow:hidden;background:transparent;backdrop-filter:none;pointer-events:none;}
+.aircraft-inset[hidden] {display:none;}
+.aircraft-inset strong,.aircraft-inset small {display:block;background:#152126;padding:8px 10px;font-size:11px;line-height:1.4;}
+.aircraft-inset strong {font-size:12px;}.aircraft-inset strong span {float:right;color:var(--accent);}
+#aircraftInsetViewport {height:144px;}
+@media(max-width:1150px) {.aircraft-inset {width:180px;}#aircraftInsetViewport {height:116px;}}
+@media(max-height:620px) {.aircraft-inset {top:144px;width:160px;}#aircraftInsetViewport {height:100px;}}
+
+.aircraft-inset[data-view=top] {top:auto;bottom:120px;}
