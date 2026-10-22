@@ -180,8 +180,8 @@ export function createFlightPhysics({state,clamp,trainingNow,targetAltitude,curr
 
   const navigationTarget = currentNavigationTarget();
   const horizontalSpeed = Math.hypot(d.vx, d.vz);
-  if (navigationTarget && horizontalSpeed > 0.25) {
-    const expectedYaw = expectedHeading(state.phase, d, state.eightIndex, navigationTarget);
+  if (navigationTarget && ['square','eight','abnormal'].includes(state.phase) && horizontalSpeed > 0.25) {
+    const expectedYaw = expectedHeading(state.phase, d, state.phase==='square'?state.squareIndex:state.eightIndex, navigationTarget);
     const headingError = angleDifference(d.yaw, expectedYaw);
     state.headingErrorSquared += headingError * headingError * dt;
     state.headingSampleTime += dt;

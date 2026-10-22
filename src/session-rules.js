@@ -10,7 +10,7 @@ export function createFlightState(subject='demo') {
     checklistIndex:0,postflightIndex:0,checklistMistakes:0,startTime:0,elapsed:0,hoverTimer:0,squareTimer:0,squareIndex:0,eightIndex:0,abnormalIndex:0,emergencyHoverTimer:0,emergencyHoverPoint:null,
     taskStartTime:0,taskElapsed:0,taskTimes:{},timeLimitExceeded:null,landingDrift:0,altitudeErrorSquared:0,altitudeSampleTime:0,headingErrorSquared:0,headingSampleTime:0,hardLandingSpeed:0,boundaryViolations:0,
     responseDelays:[],respondedPhase:null,lastPhaseChange:0,physicsAccumulator:0,simulationTime:0,batteryPct:100,flightRecords:[],lastLogSecond:-1,hasTakenOff:false,groundTime:0,touchdowns:[],processedTouchdowns:0,safetyIssues:{},arc:{key:null,angle:null,travel:0},
-    arrivalTimer:0,transitLowTime:0,dangerousSpeedTime:0,
+    arrivalTimer:0,transitLowTime:0,dangerousSpeedTime:0,coaching:{},completedSubjects:[],
     rawInput:{throttle:0,forward:0,strafe:0,yaw:0},command:{throttle:0,forward:0,strafe:0,yaw:0},
     drone:{x:home.x,z:home.z,y:0,vx:0,vz:0,vy:0,yaw:0,yawRate:0,roll:0,pitch:0,rollRate:0,pitchRate:0,thrustNewtons:0}};
 }

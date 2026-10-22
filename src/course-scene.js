@@ -56,8 +56,9 @@ export function createCourseScene(id,addCone) {
   guides.add(line(route));guides.add(line(route.map(p=>({...p,y:layout.altitude})),0xa5ebff,true));
   for(let i=1;i<route.length;i+=id==='eight'?24:1) {
     const from=route[i-1],to=route[i],direction=new THREE.Vector3(to.x-from.x,0,to.z-from.z).normalize();
-    if(direction.lengthSq()) guides.add(new THREE.ArrowHelper(direction,new THREE.Vector3(to.x,.12,to.z),.65,0x8fe3f4,.25,.18));
+    if(direction.lengthSq()) guides.add(new THREE.ArrowHelper(direction,new THREE.Vector3(to.x-direction.x*.65,.12,to.z-direction.z*.65),.65,0x8fe3f4,.25,.18));
   }
+  if(id==='abnormal')guides.add(new THREE.ArrowHelper(new THREE.Vector3(-1,0,0),new THREE.Vector3(-6.5+.65,.12,0),.65,0x8fe3f4,.25,.18));
   if(id!=='eight') guides.add(line([layout.takeoff,{x:0,z:0}],0x8fe3f4,true));
   guides.add(line([{...layout.takeoff,y:.12},{...layout.takeoff,y:layout.altitude}],0x8fe3f4,true));
   const height=textLabel(`高度 ${layout.altitude.toFixed(1)}m`,{width:2.6});height.position.set(layout.routeWidth/2+2.2,layout.altitude+.35,layout.centerZ);guides.add(height);

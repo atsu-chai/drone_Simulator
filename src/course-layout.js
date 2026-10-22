@@ -54,5 +54,10 @@ export function expectedHeading(phase, position, index, target) {
     const center=eightCenters[lobe];
     return Math.atan2(-sign*(position.z-center.z),sign*(position.x-center.x));
   }
+  if(phase==='square') {
+    const from=index===0 ? layouts.square.takeoff : squarePath[Math.min(index-1,4)];
+    const to=squarePath[Math.min(index,5)];
+    return Math.atan2(to.x-from.x,to.z-from.z);
+  }
   return target ? Math.atan2(target.x-position.x,target.z-position.z) : 0;
 }

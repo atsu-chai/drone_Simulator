@@ -1,8 +1,10 @@
+import {summarizeFlight} from './src/flight-results.js';
 import {advanceFlightFrame} from './src/flight-frame.js';
+import {evaluateFlightCoaching,coachingMessages} from './src/flight-coaching.js';
 import {createFlightState, transitionFlightPhase, navigationTarget, desiredAltitude, landedAt, phaseMission, taskLimits, squareTargets, figureEightTargets} from "./src/session-rules.js";
 import {evaluateFlightSafety, safetyMessages, coneDimensions} from "./src/flight-safety.js";
 import { flightModel, createFlightPhysics } from "./src/flight-physics.js";
-import { layouts, figureEightLap, abnormalTargets } from "./src/course-layout.js";
+import { layouts, expectedHeading, figureEightLap, abnormalTargets } from "./src/course-layout.js";
 import { createCourseScene } from "./src/course-scene.js";
 import { createDemonstration } from "./src/demonstration.js";
 import { versions, course, evaluateSample, normalizedAxis, calibrationValid, subjects, historyStore } from "./src/training.js";
@@ -346,6 +348,8 @@ function buildDrone() {
     world.rotorDiscs.push(rotorDisc);
   });
   group.add(fallback);
+  world.headingArrow=new THREE.ArrowHelper(new THREE.Vector3(0,0,1),new THREE.Vector3(0,.24,0),1.5,0x58ffb0,.35,.25);
+  group.add(world.headingArrow);
 
   world.shadow = new THREE.Mesh(
     new THREE.CircleGeometry(0.9, 48),
@@ -417,6 +421,7 @@ function updateThreeWorld(dt) {
   world.pilotEye.set(layout.pilot.x, 1.65, layout.pilot.z);
   world.drone.position.set(-d.x, d.y + 0.18, d.z);
   world.drone.rotation.set(d.pitch, -d.yaw, -d.roll);
+  world.headingArrow.visible=state.mode==='practice' || Boolean(state.presentation);
 
   if (world.droneMixer) {
     world.droneMixer.timeScale = clamp((d.thrustNewtons - 0.5) / 4.5, 0, 3.2);
@@ -458,7 +463,10 @@ function updateThreeWorld(dt) {
     world.camera.position.lerp(world.pilotEye,1-Math.exp(-dt*7));
     target.set(-d.x,Math.max(.45,d.y+.18),d.z);
   } else if(state.cameraMode==='top') {
-    world.camera.position.lerp(new THREE.Vector3(0,26,layout.centerZ-.01),1-Math.exp(-dt*5));
+    // Include the pilot and dimension captions below the course, clear of HUDs.
+    const centerZ=(layout.pilot.z-1.5+layout.centerZ+layout.fieldDepth/2+1)/2;
+    target.set(0,0,centerZ);
+    world.camera.position.lerp(new THREE.Vector3(0,32.5,centerZ-.01),1-Math.exp(-dt*5));
   } else {
     world.camera.position.lerp(new THREE.Vector3(12,16,layout.centerZ-19),1-Math.exp(-dt*5));
   }
@@ -538,7 +546,7 @@ function setPhase(phase) {
   Object.assign(takeoffPoint,layouts[state.courseId].takeoff);
   const nextMission=phaseMission[phase];
   const copy = phases[phase];
-  ui.phaseTitle.textContent = copy.title;
+  ui.phaseTitle.textContent = state.subject==='demo' && phase==='takeoff' ? '無料体験：離陸・ホバリング' : copy.title;
   ui.phaseHint.textContent = copy.hint;
   ui.examiner.textContent = copy.line;
   if(document.getElementById("voiceEnabled").checked && "speechSynthesis" in window) {
@@ -662,6 +670,8 @@ function updateMission(dt) {
   if(!state.running || state.paused)return;
   evaluateFlightSafety(state,dt);
   if(state.evaluation.fatal){state.elapsed=(trainingNow()-state.startTime)/1000;finishExam();return;}
+  const coaching=evaluateFlightCoaching(state,dt);
+  if(state.mode==='practice' && coaching.length)ui.examiner.textContent=coachingMessages[coaching.at(-1).type];
   if(state.subject!=="demo") { if(premiumMission) premiumMission(dt); return; }
   if(!state.running || state.paused) return;
   state.elapsed=(trainingNow()-state.startTime)/1000;
@@ -673,98 +683,34 @@ function updateMission(dt) {
     if(Math.hypot(d.x-takeoffPoint.x,d.z-takeoffPoint.z)<.9 && Math.abs(d.y-3.5)<.22 && Math.hypot(d.vx,d.vz,d.vy)<.45) state.hoverTimer+=dt;
     else state.hoverTimer=0;
     if(state.hoverTimer>5) setPhase("demoLanding");
-  } else if(state.phase==="demoLanding" && isLandedAt(takeoffPoint)) finishExam();
+  } else if(state.phase==="demoLanding" && isLandedAt(takeoffPoint)) {state.completedSubjects.push('demo');finishExam();}
 }
 
 function isLandedAt(point) { return landedAt(state,point); }
 
 function finishExam() {
-  state.running = false;
-  state.paused = false;
-  document.getElementById("pauseButton").hidden = true;
+  const endingPhase=state.phase;
+  const result=summarizeFlight(state);
+  state.running=false;
+  state.paused=false;
+  document.getElementById("pauseButton").hidden=true;
   setPhase("result");
-  const feedback = [];
-  let score = 100 - state.evaluation.events.reduce((total,event)=>total+event.points,0);
-  if(state.evaluation.events.some(event=>event.type==="route-penalty")) feedback.push("経路逸脱を記録しました。航跡を確認し、区間の途中でも経路を維持してください。");
-  if(state.evaluation.fatal && state.evaluation.events.some(event=>event.type==='failure-zone')) feedback.push("練習用の中止区画に入りました。減速と経路維持を単科目で練習してください。");
-  const safetyFeedback=state.evaluation.events.filter(event=>safetyMessages[event.type]).map(event=>safetyMessages[event.type]);
-  feedback.unshift(...new Set(safetyFeedback));
-  const altitudeRms =
-    state.altitudeSampleTime > 0
-      ? Math.sqrt(state.altitudeErrorSquared / state.altitudeSampleTime)
-      : 0;
-  const headingRms =
-    state.headingSampleTime > 0
-      ? Math.sqrt(state.headingErrorSquared / state.headingSampleTime)
-      : 0;
-  const fatalLanding = state.hardLandingSpeed >= 3;
-  const fatalTime = Boolean(state.timeLimitExceeded);
-
-  if (state.checklistMistakes > 0) {
-    score -= state.checklistMistakes * 8;
-    feedback.push("点検手順に順序ミスがあります。声に出して確認順を固定してください。");
-  }
-  if (altitudeRms > 0.35) {
-    score -= 16;
-    feedback.push(`高度維持の平均誤差が${altitudeRms.toFixed(2)}mです。水平移動時の上昇・下降補正を小さく早めに入れてください。`);
-  }
-  if (["full","square"].includes(state.subject) && state.squareIndex < squareTargets.length) {
-    score -= 14;
-    feedback.push("スクエア飛行の指定経路を完了できていません。次の文字入りコーンを目印に、進行方向と高度を保ってください。");
-  }
-  if (["full","eight"].includes(state.subject) && state.eightIndex < figureEightTargets.length) {
-    score -= 14;
-    feedback.push("8の字飛行を連続2周完了できていません。直径約5mの経路を一定高度で反復してください。");
-  }
-  if (["full","abnormal"].includes(state.subject) && state.abnormalIndex < abnormalTargets.length) {
-    score -= 14;
-    feedback.push("異常事態の飛行で指定側方移動を完了できていません。安定機能が弱い状態での惰性を早めに抑えてください。");
-  }
-  if (state.landingDrift > 0.9) {
-    feedback.push("着陸時に機体が流れる傾向があります。接地前に水平速度を十分に落としてください。");
-  }
-  if (state.hardLandingSpeed > 1.5) {
-    feedback.push(`接地時の降下速度が${state.hardLandingSpeed.toFixed(1)}m/sです。接地直前の降下率を抑えてください。`);
-  }
-  if (state.boundaryViolations > 0) {
-    score -= Math.min(20, state.boundaryViolations * 5);
-    feedback.push("飛行可能範囲を逸脱しています。減速開始位置と機体の慣性を意識してください。");
-  }
-  if (headingRms > 25 * Math.PI / 180) {
-    score -= 12;
-    feedback.push(`機首方位の平均誤差が${(headingRms * 180 / Math.PI).toFixed(0)}度です。進行方向への機首合わせを早めてください。`);
-  }
-  const avgResponse = average(state.responseDelays);
-  if (avgResponse > 2.8) {
-    score -= 10;
-    feedback.push("指示から操作開始までに時間がかかっています。次の課題姿勢を早めに準備してください。");
-  }
-  if (fatalTime) {
-    score = 0;
-    const taskName = state.timeLimitExceeded === "square"
-      ? "スクエア飛行"
-      : state.timeLimitExceeded === "eight"
-        ? "8の字飛行"
-        : "異常事態飛行";
-    feedback.push(`${taskName}の制限時間を超過しました。各科目の経路と減速位置を事前に固定してください。`);
-  }
-  if (feedback.length === 0) {
-    feedback.push("大きな減点傾向はありません。次は本番モードで途中表示なしに挑戦してください。");
-  }
-
-  if(state.evaluation.fatal) score=0;
-  score = Math.max(0, Math.round(score));
-  ui.resultPanel.hidden = false;
-  ui.downloadLog.disabled = state.flightRecords.length === 0;
-  ui.passFail.textContent = state.evaluation.fatal || fatalLanding || fatalTime ? "練習中止・要改善" : "練習終了（公式合否は未評価）";
-  ui.score.textContent = `${score} / 100`;
-  ui.finalTime.textContent = formatTime(state.elapsed);
-  ui.feedback.innerHTML = feedback.slice(0,3).map((item) => `<li>${item}</li>`).join("");
-  const record={participantId:getParticipantId(),environment:{userAgent:navigator.userAgent,viewport:[innerWidth,innerHeight]},id:crypto.randomUUID(),at:new Date().toISOString(),versions,subject:state.subject,mode:state.mode,score,elapsed:state.elapsed,interrupted:state.interrupted,developerMode:state.developerMode,calibration:state.calibration,events:state.evaluation.events,feedback:feedback.slice(0,3),flightRecords:state.flightRecords};
-  try { savedHistory.append(record); document.getElementById("saveStatus").textContent="このブラウザに履歴を保存しました。"; }
-  catch { document.getElementById("saveStatus").textContent="履歴を保存できません。今回のログをダウンロードしてください。"; }
-  renderHistory();
-  renderEvents(record);
+  ui.resultPanel.hidden=false;
+  ui.downloadLog.disabled=state.flightRecords.length===0;
+  ui.passFail.textContent=result.status;
+  ui.score.textContent=`${result.score} / 100`;
+  ui.finalTime.textContent=formatTime(state.elapsed);
+  ui.feedback.replaceChildren(...result.feedback.map(text=>{const li=document.createElement("li");li.textContent=text;return li;}));
+  const progress=document.getElementById("resultProgress");
+  progress.replaceChildren(...result.progress.map(task=>{const li=document.createElement("li");li.textContent=`${task.label}：${task.status}（${task.count}/${task.total}）`;return li;}));
+  const retry=document.getElementById("focusRetryButton");
+  retry.hidden=result.score===100 && result.progress.every(task=>task.complete);
+  retry.textContent=`${subjects[result.retrySubject].label}を重点練習`;
+  retry.dataset.subject=result.retrySubject;
+  const record={participantId:getParticipantId(),environment:{userAgent:navigator.userAgent,viewport:[innerWidth,innerHeight]},id:crypto.randomUUID(),at:new Date().toISOString(),versions,subject:state.subject,mode:state.mode,score:result.score,elapsed:state.elapsed,endingPhase,progress:result.progress,retrySubject:result.retrySubject,interrupted:state.interrupted,developerMode:state.developerMode,calibration:state.calibration,events:state.evaluation.events,feedback:result.feedback,flightRecords:state.flightRecords};
+  try { savedHistory.append(record);document.getElementById("saveStatus").textContent="このブラウザに履歴を保存しました。"; }
+  catch {document.getElementById("saveStatus").textContent="履歴を保存できません。今回のログをダウンロードしてください。";}
+  renderHistory();renderEvents(record);
 }
 
 function recordTelemetry() {
@@ -835,6 +781,14 @@ function renderReadouts() {
   const positionHold = state.presentation ? state.courseId!=="abnormal" : !["abnormalTakeoff", "abnormal", "emergencyHover", "emergencyTransit", "emergencyArrival", "landing"].includes(state.phase);
   ui.stability.textContent = positionHold ? "位置安定 ON" : "位置安定 OFF";
   ui.stability.classList.toggle("warning", !positionHold);
+  const degrees=yaw=>`${Math.round((yaw*180/Math.PI+360)%360)}°`;
+  const heading=document.getElementById("headingReadout");
+  if(state.mode==='exam' && state.running)heading.textContent='';
+  else if(state.presentation)heading.textContent=`緑矢印＝機首 ${degrees(d.yaw)}（0°＝前方）`;
+  else if(['square','eight','abnormal'].includes(state.phase)) {
+    const index=state.phase==='square'?state.squareIndex:state.phase==='eight'?state.eightIndex:state.abnormalIndex;
+    heading.textContent=`機首 ${degrees(d.yaw)} / 目標 ${degrees(expectedHeading(state.phase,d,index,null))}（0°＝前方）`;
+  } else heading.textContent='緑矢印＝機首（前方は操縦者から遠ざかる向き）';
 
   if (state.presentation) {ui.phaseHint.textContent=state.presentation.sample?.caption || "見本を準備しています。";} else if (state.mode === "exam" && state.running) {
     ui.phaseHint.textContent = "課題終了まで減点内容は表示されません。";
@@ -873,10 +827,7 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-function average(values) {
-  if (!values.length) return 0;
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
+
 
 function formatTime(seconds) {
   const whole = Math.max(0, Math.floor(seconds));
@@ -1009,13 +960,13 @@ function renderHistory() {
 }
 function renderEvents(record) {
   const target=document.getElementById("eventList");target.replaceChildren();
-  const labels={...safetyMessages,"route-warning":"経路への復帰指示","route-penalty":"経路逸脱","route-return":"経路に復帰","failure-zone":"中止区画への侵入"};
-  for(const event of record.events) {const li=document.createElement("li");li.textContent=`${event.time.toFixed(1)}秒 / ${event.phase} / ${labels[event.type] || event.type} / (${event.position.x.toFixed(1)}, ${event.position.z.toFixed(1)})m`;target.append(li);}
+  const labels={...safetyMessages,...coachingMessages,"route-warning":"経路への復帰指示","route-penalty":"経路逸脱","route-return":"経路に復帰","failure-zone":"中止区画への侵入"};
+  for(const event of record.events) {const li=document.createElement("li");li.textContent=`${event.time.toFixed(1)}秒 / ${phases[event.phase]?.title || event.phase} / ${labels[event.type] || event.type} / (${event.position.x.toFixed(1)}, ${event.position.z.toFixed(1)})m`;target.append(li);}
   if(!target.children.length) target.textContent="記録された経路イベントはありません。公式の全項目を評価した結果ではありません。";
   const canvas=document.getElementById("trackCanvas"),ctx=canvas.getContext("2d");ctx.clearRect(0,0,canvas.width,canvas.height);
   ctx.strokeStyle="#58c48f";ctx.lineWidth=2;ctx.beginPath();
   record.flightRecords.forEach((row,i)=>{const x=canvas.width/2+row.x_east_m*10,y=canvas.height-25-row.y_north_m*10;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();
-  ctx.fillStyle="#ef6f6c";record.events.filter(e=>e.points || e.type==="failure-zone").forEach(e=>{ctx.beginPath();ctx.arc(canvas.width/2+e.position.x*10,canvas.height-25-e.position.z*10,4,0,Math.PI*2);ctx.fill();});
+  ctx.fillStyle="#ef6f6c";record.events.filter(e=>e.points || e.fatal || e.type==="failure-zone").forEach(e=>{ctx.beginPath();ctx.arc(canvas.width/2+e.position.x*10,canvas.height-25-e.position.z*10,4,0,Math.PI*2);ctx.fill();});
 }
 document.getElementById("calibrateButton").addEventListener("click",()=>{
   if(state.running && !state.paused) return;
@@ -1031,6 +982,11 @@ document.getElementById("pauseButton").addEventListener("click",()=>{
   if(state.mode==="exam") {state.evaluation.events.push({type:"interrupted",points:0,phase:state.phase,time:state.elapsed,position:{x:state.drone.x,z:state.drone.z}});finishExam();return;}
   state.paused=false;state.physicsAccumulator=0;document.getElementById("pauseButton").textContent="一時停止";ui.examiner.textContent=phases[state.phase].line;
 });
+document.getElementById("focusRetryButton").addEventListener("click",()=>{
+  reset(document.getElementById("focusRetryButton").dataset.subject);setMode('practice');document.getElementById("subjectSelect").value=state.subject;
+  ui.examiner.textContent=`${subjects[state.subject].label}を重点練習します。飛行前点検から始めてください。`;
+  document.getElementById('checklistPanel').scrollIntoView({block:'start',behavior:'smooth'});
+});
 document.getElementById("retryButton").addEventListener("click",()=>{reset();ui.examiner.textContent="点検後、同じ科目を再練習できます。";});
 document.getElementById("exportHistoryButton").addEventListener("click",()=>{
   const blob=new Blob([JSON.stringify({versions,records:savedHistory.read()},null,2)],{type:"application/json"});
@@ -1042,12 +998,12 @@ setInterval(async()=>{
   catch {pauseTraining("利用状況を確認できません。一度終了して再接続してください。");}
 },30000);
 renderHistory();
+const initialSubject=new URLSearchParams(location.search).get("subject");
+if(subjects[initialSubject]) {state.subject=initialSubject;document.getElementById("subjectSelect").value=initialSubject;}
 fetch("/api/status").then(response=>response.json()).then(status=>{
   accessGranted=Boolean(status.access);
-  const selected=new URLSearchParams(location.search).get("subject");
-  if(subjects[selected]) {state.subject=selected;document.getElementById("subjectSelect").value=selected;reset();}
-  if(!accessGranted) ui.examiner.textContent="登録不要の無料体験を利用できます。他の科目は検証参加者・契約者向けです。";
-}).catch(()=>{ui.examiner.textContent="無料体験を利用できます。全科目の利用には専用サーバーから起動してください。";});
+  if(!accessGranted && state.phase==='preflight' && !state.presentation)ui.examiner.textContent="登録不要の無料体験を利用できます。他の科目は検証参加者・契約者向けです。";
+}).catch(()=>{if(state.phase==='preflight' && !state.presentation)ui.examiner.textContent="無料体験を利用できます。全科目の利用には専用サーバーから起動してください。";});
 
 initThreeWorld();
 reset();

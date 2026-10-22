@@ -50,3 +50,10 @@ test('emergency hover cannot finish after moving away; square dwell resets on de
   const h=harness();h.state.phase='emergencyHover';h.state.emergencyHoverPoint={x:0,z:0};Object.assign(h.state.drone,{x:2,z:0,y:3.5});for(let i=0;i<370;i++)h.tick();assert.equal(h.state.phase,'emergencyHover');assert.equal(h.state.emergencyHoverTimer,0);
   const k=harness();k.state.phase='square';k.state.squareIndex=1;Object.assign(k.state.drone,{x:6.5,z:0,y:3.5});for(let i=0;i<60;i++)k.tick();assert.ok(k.state.squareTimer>0);k.state.drone.x=5;k.tick();assert.equal(k.state.squareTimer,0);
 });
+test('reverse eight never advances a waypoint or starts landing',()=>{
+  const h=harness('eight');h.state.courseId='eight';h.state.phase='eight';h.state.drone.y=1.5;
+  for(let i=0;i<=1200;i++) {
+    const a=-i/1200*Math.PI*2;Object.assign(h.state.drone,{x:-2.5+2.5*Math.cos(a),z:2.5*Math.sin(a)});h.tick();
+  }
+  assert.equal(h.state.eightIndex,0);assert.equal(h.state.phase,'eight');assert.ok(h.state.arc.travel< -6);
+});

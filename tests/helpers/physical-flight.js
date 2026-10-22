@@ -1,4 +1,6 @@
+import {summarizeFlight} from '../../src/flight-results.js';
 import {advanceFlightFrame} from '../../src/flight-frame.js';
+import {evaluateFlightCoaching} from '../../src/flight-coaching.js';
 import {createFlightState,transitionFlightPhase,navigationTarget,desiredAltitude,landedAt,phaseMission,taskLimits,squareTargets,figureEightTargets} from '../../src/session-rules.js';
 import {layouts,figureEightLap,abnormalTargets,eightCenters,expectedHeading} from '../../src/course-layout.js';
 import {createFlightPhysics,flightModel} from '../../src/flight-physics.js';
@@ -18,6 +20,7 @@ export function createPhysicalSession(subject='full') {
   state.running=true;setPhase(subjects[subject].phase);
   const afterPhysics=(dt,input)=>{
     evaluateFlightSafety(state,dt);
+    evaluateFlightCoaching(state,dt);
     if(state.evaluation.fatal)finishExam();else mission(dt);
     if(Math.round(state.simulationTime*120)%12===0)samples.push({t:state.simulationTime,phase:state.phase,courseId:state.courseId,x:state.drone.x,y:state.drone.y,z:state.drone.z,yaw:state.drone.yaw,input:{...input},velocity:{x:state.drone.vx,y:state.drone.vy,z:state.drone.vz}});
   };
@@ -40,7 +43,7 @@ export function createVerificationPilot() {
       target={x:center.x+2.5*Math.cos(angle),z:center.z+2.5*Math.sin(angle)};
       desiredYaw=expectedHeading(state.phase,d,state.eightIndex,target);
     } else if(state.phase==='square') {
-      if(Math.hypot(target.x-d.x,target.z-d.z)>.35)desiredYaw=expectedHeading(state.phase,d,0,target);
+      desiredYaw=expectedHeading(state.phase,d,state.squareIndex,target);
     } else desiredYaw=0;
     previousYaw=desiredYaw;
     let vx=(target.x-d.x)*1.4,vz=(target.z-d.z)*1.4;
@@ -67,5 +70,5 @@ export function flyPhysicalCourse(subject='full',{fps=60,maxSeconds=900}={}) {
   while(session.state.running && frames<maxSeconds*fps) {
     session.frame(1/fps,pilot(session.state));frames++;
   }
-  return {outcome:session.outcome||'stalled',duration:session.state.simulationTime,phases:session.phases,events:session.state.evaluation.events,samples:session.samples,final:{...session.state.drone},squareIndex:session.state.squareIndex,eightIndex:session.state.eightIndex,abnormalIndex:session.state.abnormalIndex,touchdowns:session.state.touchdowns,altitudeRms:Math.sqrt(session.state.altitudeErrorSquared/Math.max(.001,session.state.altitudeSampleTime)),headingRms:Math.sqrt(session.state.headingErrorSquared/Math.max(.001,session.state.headingSampleTime))};
+  return {result:summarizeFlight(session.state),outcome:session.outcome||'stalled',duration:session.state.simulationTime,phases:session.phases,events:session.state.evaluation.events,samples:session.samples,final:{...session.state.drone},squareIndex:session.state.squareIndex,eightIndex:session.state.eightIndex,abnormalIndex:session.state.abnormalIndex,touchdowns:session.state.touchdowns,altitudeRms:Math.sqrt(session.state.altitudeErrorSquared/Math.max(.001,session.state.altitudeSampleTime)),headingRms:Math.sqrt(session.state.headingErrorSquared/Math.max(.001,session.state.headingSampleTime))};
 }

@@ -8,6 +8,8 @@ for(const subject of ['square','eight','abnormal','full']) {
   test(`${subject}: normalized sticks and production physics complete every task and physically land`,()=>{
     const run=flyPhysicalCourse(subject);
     assert.equal(run.outcome,'completed');
+    assert.ok(run.result.progress.every(task=>task.complete));
+    assert.equal(run.result.score,100);
     assert.equal(run.final.y,0);
     assert.equal(run.touchdowns.length,subject==='full'?3:1);
     assert.equal(run.events.some(e=>e.fatal || e.type==='failure-zone' || e.points>0),false);
@@ -29,7 +31,9 @@ test('ten full runs use production frame accumulation and frame-rate input sampl
   assert.ok(Math.abs(references[30].duration-references[60].duration)<3);
   for(let i=0;i<10;i++) {
     const fps=i%2?30:60,run=flyPhysicalCourse('full',{fps});
-    assert.equal(run.outcome,'completed');assert.equal(run.touchdowns.length,3);
+    assert.equal(run.outcome,'completed');
+    assert.ok(run.result.progress.every(task=>task.complete));
+    assert.equal(run.result.score,100);assert.equal(run.touchdowns.length,3);
     assert.deepEqual(run,references[fps]);
   }
 });

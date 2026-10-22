@@ -1,4 +1,4 @@
-export const versions = Object.freeze({ app: '0.4.0', course: 'mlit-basic-3', scoring: 'training-3', physics: '20261022', curriculum: 'basic-1' });
+export const versions = Object.freeze({ app: '0.5.0', course: 'mlit-basic-3', scoring: 'training-4', physics: '20261022', curriculum: 'basic-1' });
 export { squarePath } from './course-layout.js';
 import { squarePath, eightCenters, layouts, abnormalTargets, courseIdFor, fieldZone } from './course-layout.js';
 export const course = Object.freeze({ penalty: 1.5, failure: 2.5, grace: 2, squarePath, eightCenters, eightRadius: 2.5 });

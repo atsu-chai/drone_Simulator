@@ -28,7 +28,7 @@ export function createMission(deps) {
     if(event.type === "route-warning") ui.examiner.textContent = "経路から離れています。経路に戻ってください。";
   }
   if(state.evaluation.fatal) { finishExam(); return; }
-  if(state.phase === "demoLanding" && isLandedAt(takeoffPoint)) { finishExam(); return; }
+  if(state.phase === "demoLanding" && isLandedAt(takeoffPoint)) { (state.completedSubjects ||= []).push('demo'); finishExam(); return; }
 
   if (state.phase === "takeoff") {
     if (Math.hypot(d.x-takeoffPoint.x,d.z-takeoffPoint.z)<.9 && Math.abs(d.y - 3.5) < 0.22 && Math.hypot(d.vx, d.vz, d.vy) < 0.45) {
@@ -60,6 +60,7 @@ export function createMission(deps) {
   }
 
   if (state.phase === "squareLanding" && isLandedAt(takeoffPoint)) {
+    (state.completedSubjects ||= []).push('square');
     if(state.subject === "square") { finishExam(); return; }
     setPhase("eightTakeoff");
   }
@@ -103,6 +104,7 @@ export function createMission(deps) {
   }
 
   if (state.phase === "eightLanding" && isLandedAt(takeoffPoint)) {
+    (state.completedSubjects ||= []).push('eight');
     if(state.subject === "eight") { finishExam(); return; }
     setPhase("abnormalTakeoff");
   }
@@ -147,6 +149,7 @@ export function createMission(deps) {
       state.landingDrift = Math.max(state.landingDrift, Math.hypot(d.vx, d.vz));
     }
     if (isLandedAt(emergencyLandingPoint)) {
+      (state.completedSubjects ||= []).push('abnormal');
       state.running = false;
       setPhase("postflight");
       buildPostflightChecklist();
