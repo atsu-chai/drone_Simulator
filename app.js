@@ -1,3 +1,4 @@
+import {fitCourseCamera} from './src/course-camera.js';
 import {createPresentationNarrator} from './src/presentation-narrator.js';
 import {aircraftDimensions,fitAircraftBounds} from './src/aircraft-geometry.js';
 import {createControllerInput,keyboardInput,inputCentered} from './src/controller-input.js';
@@ -177,6 +178,8 @@ const world = {
   camera: null,
   insetCamera: null,
   insetRect: null,
+  compactFrames: null,
+  framedCourse: null,
   drone: null,
   droneFallback: null,
   droneMixer: null,
@@ -237,6 +240,8 @@ function initThreeWorld() {
   buildTrainingField();
   buildDrone();
   window.addEventListener("resize", resizeRenderer);
+  const layoutObserver=new ResizeObserver(resizeRenderer);
+  for(const element of document.querySelectorAll('.sim-stage,.top-left,.course-legend,.bottom-center,.telemetry-status'))layoutObserver.observe(element);
   resizeRenderer();
   state.threeReady = true;
   return true;
@@ -462,12 +467,23 @@ function resizeRenderer() {
   world.camera.updateProjectionMatrix();
   const inset=document.getElementById('aircraftInsetViewport').getBoundingClientRect();
   world.insetRect={x:inset.left-rect.left,y:rect.bottom-inset.bottom,width:inset.width,height:inset.height};
+  world.compactFrames=null;
+  if(width<=900) {
+    const local=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return {top:r.top-rect.top,bottom:r.bottom-rect.top};};
+    const headerBottom=Math.max(...['.top-left','.view-controls','.telemetry-status'].map(selector=>local(selector).bottom),document.getElementById('aircraftInset').hidden?0:local('.aircraft-inset').bottom);
+    const footerTop=Math.min(...['.course-legend','.top-right','.bottom-center'].map(selector=>local(selector).top));
+    const area={left:12,right:width-12,top:headerBottom+12,bottom:Math.max(headerBottom+112,footerTop-12)};
+    const group=world.fields[state.courseId].group;
+    world.compactFrames={overview:fitCourseCamera(world.camera,group,area,width,height,'overview'),top:fitCourseCamera(world.camera,group,area,width,height,'top')};
+  }
+  world.framedCourse=state.courseId;world.snapCamera=true;
 }
 
 function updateThreeWorld(dt) {
   if (!state.threeReady) return;
   const d = state.drone;
   const layout=layouts[state.courseId];
+  if(world.framedCourse!==state.courseId)resizeRenderer();
   for(const [id,field] of Object.entries(world.fields)) {
     field.group.visible=id===state.courseId;
     // Keep the real cone lettering; floating captions would hide a landed aircraft.
@@ -518,7 +534,16 @@ function updateThreeWorld(dt) {
   const cameraBlend=world.snapCamera?1:1-Math.exp(-dt*7);
   const positionBlend=world.snapCamera?1:1-Math.exp(-dt*5);
   const target=new THREE.Vector3(0,0.5,layout.centerZ);
-  if(state.cameraMode==='pilot') {
+  const compactFrame=world.compactFrames?.[state.cameraMode];
+  world.camera.far=compactFrame?.far??120;
+  // Keep the entire fitted course clear; distant background may still fade.
+  world.scene.fog.near=compactFrame?compactFrame.far:60;
+  world.scene.fog.far=compactFrame?compactFrame.far+50:110;
+  if(!compactFrame)world.camera.clearViewOffset();
+  if(compactFrame) {
+    world.camera.setViewOffset(canvas.clientWidth,canvas.clientHeight,compactFrame.offset.x,compactFrame.offset.y,canvas.clientWidth,canvas.clientHeight);
+    target.copy(compactFrame.target);world.camera.position.lerp(compactFrame.position,positionBlend);
+  } else if(state.cameraMode==='pilot') {
     world.camera.position.lerp(world.pilotEye,cameraBlend);
     target.set(-d.x,Math.max(.45,d.y+.18),d.z);
   } else if(state.cameraMode==='top') {
@@ -540,8 +565,8 @@ function updateThreeWorld(dt) {
   zoomControl.disabled=!teachingView;
   const showInset=teachingView && zoomControl.checked;
   const insetPanel=document.getElementById('aircraftInset');
-  if(insetPanel.dataset.view!==state.cameraMode) {insetPanel.dataset.view=state.cameraMode;if(showInset)resizeRenderer();}
-  if(insetPanel.hidden===showInset) {insetPanel.hidden=!showInset;if(showInset)resizeRenderer();}
+  if(insetPanel.dataset.view!==state.cameraMode) {insetPanel.dataset.view=state.cameraMode;resizeRenderer();}
+  if(insetPanel.hidden===showInset) {insetPanel.hidden=!showInset;resizeRenderer();}
   renderer.setViewport(0,0,canvas.clientWidth,canvas.clientHeight);
   renderer.render(world.scene, world.camera);
   if(showInset && world.insetRect?.width>0) {
