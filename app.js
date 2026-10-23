@@ -1,3 +1,4 @@
+import {createPresentationNarrator} from './src/presentation-narrator.js';
 import {aircraftDimensions,fitAircraftBounds} from './src/aircraft-geometry.js';
 import {createControllerInput,keyboardInput,inputCentered} from './src/controller-input.js';
 import {summarizeFlight} from './src/flight-results.js';
@@ -15,6 +16,26 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
 
 const canvas = document.getElementById("simCanvas");
+let narrationRequest=0;
+function speakNarration(text) {
+  const status=document.getElementById('narrationStatus');
+  if(!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) {
+    status.textContent='この環境では音声を利用できません。字幕で確認してください。';return;
+  }
+  const request=++narrationRequest;
+  const speech=new SpeechSynthesisUtterance(text);speech.lang='ja-JP';
+  const report=message=>{if(request===narrationRequest)status.textContent=message;};
+  speech.onstart=()=>report('読み上げ中');
+  speech.onend=()=>report('この区間の読み上げが終了しました');
+  speech.onerror=()=>report('音声を再生できません。字幕で確認してください。');
+  status.textContent='音声を準備中';speechSynthesis.speak(speech);
+}
+function stopNarration() {
+  narrationRequest++;
+  if('speechSynthesis' in window)speechSynthesis.cancel();
+  document.getElementById('narrationStatus').textContent=document.getElementById('voiceEnabled').checked?'音声停止中':'音声オフ';
+}
+const presentationNarrator=createPresentationNarrator({speak:speakNarration,stop:stopNarration});
 
 const ui = {
   inputStatus: document.getElementById("inputMonitorStatus"),
@@ -611,9 +632,8 @@ function setPhase(phase) {
   ui.phaseTitle.textContent = state.subject==='demo' && phase==='takeoff' ? '無料体験：離陸・ホバリング' : copy.title;
   ui.phaseHint.textContent = copy.hint;
   ui.examiner.textContent = copy.line;
-  if(document.getElementById("voiceEnabled").checked && "speechSynthesis" in window) {
-    speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(copy.line);utterance.lang="ja-JP";speechSynthesis.speak(utterance);
-  }
+  presentationNarrator.reset();
+  if(document.getElementById("voiceEnabled").checked)speakNarration(copy.line);
   const missionIndex = missionOrder.indexOf(nextMission);
   ui.missions.forEach((item) => {
     const itemIndex = missionOrder.indexOf(item.dataset.mission);
@@ -623,6 +643,7 @@ function setPhase(phase) {
 }
 
 function reset(nextSubject) {
+  presentationNarrator.reset();
   const selectedSubject=typeof nextSubject==="string"?nextSubject:state.subject;
   state.presentation=null;
   document.getElementById("presentationControls").hidden=true;
@@ -917,17 +938,14 @@ function updatePresentation(dt) {
   ui.examiner.textContent=sample.caption;
   document.getElementById("presentationSeek").value=player.time;
   document.getElementById("presentationTime").textContent=`${formatTime(player.time)} / ${formatTime(player.timeline.duration)}`;
-  if(player.lastStep!==sample.stepIndex) {
-    player.lastStep=sample.stepIndex;
-    if(document.getElementById("voiceEnabled").checked && 'speechSynthesis' in window) {speechSynthesis.cancel();const speech=new SpeechSynthesisUtterance(sample.caption);speech.lang='ja-JP';speechSynthesis.speak(speech);}
-  }
+  presentationNarrator.update({...sample,enabled:document.getElementById("voiceEnabled").checked,paused:player.paused});
   if(sample.done)player.paused=true;
   if(player.paused)document.getElementById("presentationPause").textContent=sample.done?"もう一度再生":"再生";
 }
 document.getElementById("watchButton").addEventListener("click",()=>{
   const subject=state.subject;reset();
   const timeline=createDemonstration(subject);
-  state.presentation={timeline,time:0,speed:Number(document.getElementById("presentationSpeed").value),paused:false,lastStep:-1};
+  state.presentation={timeline,time:0,speed:Number(document.getElementById("presentationSpeed").value),paused:false};
   ui.modeBadge.textContent="解説付き見本";
   document.getElementById("presentationControls").hidden=false;
   document.getElementById("presentationSeek").max=timeline.duration;
@@ -936,11 +954,17 @@ document.getElementById("watchButton").addEventListener("click",()=>{
 });
 document.getElementById("presentationPause").addEventListener("click",()=>{
   if(!state.presentation)return;const p=state.presentation;if(p.time>=p.timeline.duration)p.time=0;p.paused=!p.paused;document.getElementById("presentationPause").textContent=p.paused?"再生":"一時停止";
-  if(p.paused && 'speechSynthesis' in window)speechSynthesis.cancel();
+  if(p.paused)presentationNarrator.reset();
+  updatePresentation(0);
 });
 document.getElementById("presentationSeek").addEventListener("input",event=>{if(state.presentation){state.presentation.time=Number(event.target.value);world.snapCamera=true;updatePresentation(0);}});
 document.getElementById("presentationSpeed").addEventListener("change",event=>{if(state.presentation)state.presentation.speed=Number(event.target.value);});
-document.getElementById("presentationStop").addEventListener("click",()=>{if('speechSynthesis'in window)speechSynthesis.cancel();reset();setMode(state.mode);});
+document.getElementById("presentationStop").addEventListener("click",()=>{reset();setMode(state.mode);});
+document.getElementById('voiceEnabled').addEventListener('change',()=>{
+  presentationNarrator.reset();
+  if(state.presentation)updatePresentation(0);
+  else if(document.getElementById('voiceEnabled').checked)speakNarration(ui.examiner.textContent);
+});
 document.querySelectorAll("[data-camera]").forEach(button=>button.addEventListener("click",()=>{state.cameraMode=button.dataset.camera;world.snapCamera=true;document.querySelectorAll("[data-camera]").forEach(item=>item.classList.toggle("active",item===button));}));
 
 function getParticipantId() {
@@ -975,7 +999,7 @@ function pollController(dt) {
 function pauseTraining(message) {
   if(!pauseFlight(state))return;
   if(!state.developerMode){controllerInput.requireConfirmation();state.calibration=null;}
-  if('speechSynthesis' in window)speechSynthesis.cancel();
+  presentationNarrator.reset();
   document.getElementById('pauseButton').textContent=state.mode==='exam'?'中断して結果を確認':'確認して再開';
   ui.examiner.textContent=message;
 }
