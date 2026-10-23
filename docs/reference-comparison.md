@@ -21,7 +21,7 @@
 | 条件 | 現在の証拠 | 判定と限界 |
 |---|---|---|
 | 1 コース・H・コーン・操縦者 | course-layout.js / course-scene.js、公式PDFの図の目視、course-layout.test.js | ソフトウェア上の共通配置と寸法を確認。実会場との一致を保証しない |
-| 2 区画・経路・寸法・機首 | visual-verification.md、114場面の一覧、拡大枠の36場面 | 旧版1280×720に加え、0.6.5では941×724／主画面581×724の27場面を確認。全OS・全画面サイズの証明ではない |
+| 2 区画・経路・寸法・機首 | visual-verification.md、114場面の一覧、拡大枠の36場面 | 旧版1280×720と0.6.5の941×724に加え、0.6.6ではCSS寸法1280×720／1024×768／760×1000の表示枠で27場面を確認。画像は全体60%表示。全OS・全画面サイズの証明ではない |
 | 3 主視点3種 | 同記録のpilot / overview / top画像、視点切替の操作 | 切替と固定操縦者位置を確認 |
 | 4 解説見本と練習の分離 | demonstration.js、app.js updatePresentation、course-layout.test.js、[0.6.3連続再生画像](screenshots/reference-audit/full-complete-063.png) | 字幕・再生・停止・シーク・速度・終了を確認。音声合成の品質・全端末の音声出力は未評価 |
 | 5 実操作の科目進行 | physical-course.test.js、mission.test.js、safety.test.js、coaching.test.js、共通物理／描画フレームの完走と負例 | ソフトウェアの正しい順序・接地・区画・時間超過・逆走等を確認。実機操縦特性との一致や公式合格判定は未評価 |

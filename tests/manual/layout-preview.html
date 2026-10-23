@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<title>シミュレーターの表示サイズ確認</title>
+<style>
+body{margin:16px;background:#101b20;color:#eaf2ef;font:14px system-ui,sans-serif}header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:12px}h1{font-size:16px;margin:0}select{font:inherit;padding:5px;background:#20332d;color:inherit}#frameHost{position:relative;margin:auto;border:1px solid #6b8c80}iframe{position:absolute;top:0;left:0;transform:scale(.6);transform-origin:top left;border:0}p{font-size:12px;color:#bdccc5;margin:8px 0}label{display:flex;align-items:center;gap:6px}
+</style>
+<header><h1>実ページの表示確認</h1><label>表示サイズ<select id="previewSize"><option value="1280,720">1280 × 720：通常</option><option value="1024,768">1024 × 768：中間</option><option value="760,1000">760 × 1000：縦積み</option></select></label><label>科目<select id="previewSubject"><option value="square">スクエア</option><option value="eight">8の字</option><option value="abnormal">異常事態</option></select></label></header>
+<p>通常のシミュレーターを実寸の表示枠で開き、全体を60%で表示しています。実際の公開画面ファイルと見本飛行を使用します。ログイン・決済は検証しません。</p>
+<div id="frameHost"><iframe id="preview" title="実寸のシミュレーター" src="/preview/index.html?subject=square" width="1280" height="720"></iframe></div>
+<script>
+const preview=document.getElementById('preview'),host=document.getElementById('frameHost');
+function resizePreview(){const [width,height]=document.getElementById('previewSize').value.split(',').map(Number);preview.width=width;preview.height=height;host.style.width=`${width*.6}px`;host.style.height=`${height*.6}px`;}
+document.getElementById('previewSize').addEventListener('change',resizePreview);
+document.getElementById('previewSubject').addEventListener('change',event=>{preview.src=`/preview/index.html?subject=${event.target.value}`;});
+resizePreview();
+</script>
+</html>

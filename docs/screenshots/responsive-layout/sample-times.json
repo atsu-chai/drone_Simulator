@@ -1,0 +1,194 @@
+{
+  "displayScale": 0.6,
+  "samples": [
+    {
+      "subject": "square",
+      "size": "1280,720",
+      "view": "斜め俯瞰",
+      "time": 35.6,
+      "file": "square-1280x720-overview.png"
+    },
+    {
+      "subject": "square",
+      "size": "1280,720",
+      "view": "真上",
+      "time": 35.6,
+      "file": "square-1280x720-top.png"
+    },
+    {
+      "subject": "square",
+      "size": "1280,720",
+      "view": "操縦者",
+      "time": 35.6,
+      "file": "square-1280x720-pilot.png"
+    },
+    {
+      "subject": "square",
+      "size": "1024,768",
+      "view": "斜め俯瞰",
+      "time": 35.6,
+      "file": "square-1024x768-overview.png"
+    },
+    {
+      "subject": "square",
+      "size": "1024,768",
+      "view": "真上",
+      "time": 35.6,
+      "file": "square-1024x768-top.png"
+    },
+    {
+      "subject": "square",
+      "size": "1024,768",
+      "view": "操縦者",
+      "time": 35.6,
+      "file": "square-1024x768-pilot.png"
+    },
+    {
+      "subject": "square",
+      "size": "760,1000",
+      "view": "斜め俯瞰",
+      "time": 35.6,
+      "file": "square-760x1000-overview.png"
+    },
+    {
+      "subject": "square",
+      "size": "760,1000",
+      "view": "真上",
+      "time": 35.6,
+      "file": "square-760x1000-top.png"
+    },
+    {
+      "subject": "square",
+      "size": "760,1000",
+      "view": "操縦者",
+      "time": 35.6,
+      "file": "square-760x1000-pilot.png"
+    },
+    {
+      "subject": "eight",
+      "size": "1280,720",
+      "view": "斜め俯瞰",
+      "time": 32.1,
+      "file": "eight-1280x720-overview.png"
+    },
+    {
+      "subject": "eight",
+      "size": "1280,720",
+      "view": "真上",
+      "time": 32.1,
+      "file": "eight-1280x720-top.png"
+    },
+    {
+      "subject": "eight",
+      "size": "1280,720",
+      "view": "操縦者",
+      "time": 32.1,
+      "file": "eight-1280x720-pilot.png"
+    },
+    {
+      "subject": "eight",
+      "size": "1024,768",
+      "view": "斜め俯瞰",
+      "time": 32.1,
+      "file": "eight-1024x768-overview.png"
+    },
+    {
+      "subject": "eight",
+      "size": "1024,768",
+      "view": "真上",
+      "time": 32.1,
+      "file": "eight-1024x768-top.png"
+    },
+    {
+      "subject": "eight",
+      "size": "1024,768",
+      "view": "操縦者",
+      "time": 32.1,
+      "file": "eight-1024x768-pilot.png"
+    },
+    {
+      "subject": "eight",
+      "size": "760,1000",
+      "view": "斜め俯瞰",
+      "time": 32.1,
+      "file": "eight-760x1000-overview.png"
+    },
+    {
+      "subject": "eight",
+      "size": "760,1000",
+      "view": "真上",
+      "time": 32.1,
+      "file": "eight-760x1000-top.png"
+    },
+    {
+      "subject": "eight",
+      "size": "760,1000",
+      "view": "操縦者",
+      "time": 32.1,
+      "file": "eight-760x1000-pilot.png"
+    },
+    {
+      "subject": "abnormal",
+      "size": "1280,720",
+      "view": "斜め俯瞰",
+      "time": 56,
+      "file": "abnormal-1280x720-overview.png"
+    },
+    {
+      "subject": "abnormal",
+      "size": "1280,720",
+      "view": "真上",
+      "time": 56,
+      "file": "abnormal-1280x720-top.png"
+    },
+    {
+      "subject": "abnormal",
+      "size": "1280,720",
+      "view": "操縦者",
+      "time": 56,
+      "file": "abnormal-1280x720-pilot.png"
+    },
+    {
+      "subject": "abnormal",
+      "size": "1024,768",
+      "view": "斜め俯瞰",
+      "time": 56,
+      "file": "abnormal-1024x768-overview.png"
+    },
+    {
+      "subject": "abnormal",
+      "size": "1024,768",
+      "view": "真上",
+      "time": 56,
+      "file": "abnormal-1024x768-top.png"
+    },
+    {
+      "subject": "abnormal",
+      "size": "1024,768",
+      "view": "操縦者",
+      "time": 56,
+      "file": "abnormal-1024x768-pilot.png"
+    },
+    {
+      "subject": "abnormal",
+      "size": "760,1000",
+      "view": "斜め俯瞰",
+      "time": 56,
+      "file": "abnormal-760x1000-overview.png"
+    },
+    {
+      "subject": "abnormal",
+      "size": "760,1000",
+      "view": "真上",
+      "time": 56,
+      "file": "abnormal-760x1000-top.png"
+    },
+    {
+      "subject": "abnormal",
+      "size": "760,1000",
+      "view": "操縦者",
+      "time": 56,
+      "file": "abnormal-760x1000-pilot.png"
+    }
+  ]
+}

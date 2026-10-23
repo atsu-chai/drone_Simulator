@@ -468,7 +468,7 @@ function resizeRenderer() {
   const inset=document.getElementById('aircraftInsetViewport').getBoundingClientRect();
   world.insetRect={x:inset.left-rect.left,y:rect.bottom-inset.bottom,width:inset.width,height:inset.height};
   world.compactFrames=null;
-  if(width<=900) {
+  if(width<=1200) {
     const local=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return {top:r.top-rect.top,bottom:r.bottom-rect.top};};
     const headerBottom=Math.max(...['.top-left','.view-controls','.telemetry-status'].map(selector=>local(selector).bottom),document.getElementById('aircraftInset').hidden?0:local('.aircraft-inset').bottom);
     const footerTop=Math.min(...['.course-legend','.top-right','.bottom-center'].map(selector=>local(selector).top));

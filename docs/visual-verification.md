@@ -123,3 +123,17 @@ IAB / localhost:8000、1280×720。見本を一時停止し、各科目で離陸
 [時刻一覧](screenshots/compact-layout/sample-times.json)、[スクエア一覧](screenshots/compact-layout/square-sheet.png)、[8の字一覧](screenshots/compact-layout/eight-sheet.png)、[異常事態一覧](screenshots/compact-layout/abnormal-sheet.png)。一覧は581×724の主画面を切り出して縮小した比較用で、飛行状態は編集していない。[全画面の例](screenshots/compact-layout/square-overview.png)も保存。
 
 全71自動テスト、構文・差分確認が成功。今回の投影処理そのものは上記実ブラウザで検証した。任意の画面寸法すべて、幅760px以下の縦積み、旧1280×720での最新変更の再実行までは証明していない。過去の1280×720画像は当時の版の証拠である。実コントローラーはユーザーが今は接続できないため未検証のまま。
+
+## 通常幅・中間幅・縦積みの再確認（0.6.6）
+
+通常幅への再検証で、8の字の俯瞰が画面下へ切れることを発見。上記の自動配置・投影調整を飛行画面幅900px以下から1200px以下へ拡張し、1280pxのウィンドウで操作パネルを除いた920pxの飛行画面にも適用した。縦積みへの切替では、グリッド内のcanvasの内在サイズに影響されて飛行画面が伸びていたため、ブロック配置と明示的な高さへ変更した。飛行画面はmax(560px,58vh)、操作パネルはmax(240px,42vh)。高さの小さい端末ではページスクロールを許容する。
+
+[表示確認用ページ](../tests/manual/README.md)を追加。通常のサーバーは埋め込み禁止を維持するため、127.0.0.1の独立した表示専用サーバーから公開画面ファイルだけを配信した。認証・課金APIや非公開の科目実行モジュールは提供しない。これはサービス全体の接続確認ではない。
+
+IABでiframeのCSS寸法を1280×720、1024×768、760×1000へ切り替え、スクエア35.6秒、8の字32.1秒、異常事態56秒の見本を停止して各3視点を記録。修正後の27枚を保存し、俯瞰・真上の区画外周、寸法・操縦者、機体と字幕の表示を目視した。サイズ変更時は同じページ・再生位置を保持。再生中のサイズ変更で時間が進むこと、拡大枠のオン・オフ、760×1000でページを読み直した初期配置も確認した。
+
+[時刻・寸法一覧](screenshots/responsive-layout/sample-times.json)、[スクエア一覧](screenshots/responsive-layout/square-sheet.png)、[8の字一覧](screenshots/responsive-layout/eight-sheet.png)、[異常事態一覧](screenshots/responsive-layout/abnormal-sheet.png)、[縦積みでの初回読込](screenshots/responsive-layout/stacked-direct-load.png)。iframe全体を60%表示した実ブラウザ画像であり、同じ寸法のモニターを等倍撮影した画像ではない。一覧はさらに縮小した比較用。過去版の画像とはディレクトリを分けた。
+
+ブラウザログには、ページ読込時のMutationObserverのTypeErrorが3件記録された。[ログ](screenshots/responsive-layout/browser-warnings.json)を保存。アプリのコードはMutationObserverを使用していないが、発生元のスタックは得られていないため「エラーなし」とは扱わない。見本再生・視点変更・サイズ変更は上記のとおり動作した。
+
+全71自動テスト、構文・差分確認が成功。表示専用サーバーも公開ファイル・未契約応答と非公開モジュール／管理API／秘密ファイル／不正URL／POSTの拒否を計9項目確認。任意の画面寸法・OS・画素密度や実コントローラーの証明へは拡張しない。仕様・標準の両レビューで追加の修正事項なし。
