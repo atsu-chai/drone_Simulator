@@ -4,13 +4,24 @@
 
 直接受験する利用者の合格実績に向けた現状評価・初期範囲・受入条件は、[要件定義・最低品質基準 v2（提案版）](docs/requirements-v2.md) を参照してください。
 
+## 他のAI・別の端末で開発する
+
+初回セットアップと日々のGitHub同期は [開発・引き継ぎ手順](CONTRIBUTING.md) を参照してください。AIは [AGENTS.md](AGENTS.md) から読み始めます。
+
+- [現在地と次の作業](docs/handoff.md)
+- [設計・運用の判断記録](docs/decisions.md)
+- [実装済みと未検証事項](docs/implementation-status.md)
+
 ## 起動
 
-Node.js 24以上で専用サーバーを起動します（追加パッケージ不要）。
+Node.js 24系を推奨、24以上が必要です。追加パッケージは不要です。
 
 ```sh
+npm run setup
 npm start
 ```
+
+`setup` は `.env.example` から `.env` を作成します。既存の設定は上書きしません。`npm start` が `.env` を読み込み、DBは初回起動時に `.data/` へ作成されます。これらは端末ごとの設定・データであり、GitHubには保存しません。
 
 ブラウザで `http://localhost:8000/index.html` を開きます。
 
