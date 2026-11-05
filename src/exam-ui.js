@@ -47,7 +47,7 @@ export function examPaper(s) {
 }
 export function createExamUI({stageElement,send,exit,resume=()=>{},title='本番形式（通し）',retry=null}) {
   const originalParent=stageElement.parentNode,originalNext=stageElement.nextSibling;
-  const root=document.createElement('section');root.className='exam-console';root.setAttribute('aria-label','本番形式コンソール');
+  const root=document.createElement('section');root.className=retry?'exam-console exam-flight-only':'exam-console';root.setAttribute('aria-label','本番形式コンソール');
   root.innerHTML=`<header><div><strong>${escape(title)}</strong><p>進め方は受験機関の案内を優先</p></div><ol class="exam-progress"></ol>${retry?'<button type="button" data-retry>最初からやり直す</button>':''}<button type="button" data-exit>終了して科目選択へ</button></header>`+'<div class="exam-center"><div class="exam-paper"><form novalidate></form></div></div><footer><div class="exam-context"></div><p class="exam-line" aria-live="polite"></p><p class="exam-warning" role="status"></p><div class="exam-calls"><label>呼称を選択（数字キー1〜5でも呼称できます）<select aria-label="受験者の呼称"><option value="">選択してください</option>'+calls.map((c,i)=>`<option value="${c.id}">${i+1}：${escape(c.text)}</option>`).join('')+'</select></label><button type="button" data-call>選択した呼称を伝える（Space）</button></div><span class="exam-time"></span></footer>';
   document.body.append(root);root.querySelector('.exam-center').prepend(stageElement);document.body.classList.add('exam-active');
   let current=null,signature='';const form=root.querySelector('form');
@@ -100,7 +100,7 @@ export function createExamUI({stageElement,send,exit,resume=()=>{},title='本番
       root.querySelector('.exam-line').textContent=paused?`${pauseReason||'一時停止しました。'} スティックを中立にして再開してください。`:(s.practical?.step===0?`風速計 ${measured.toFixed(1)} m/sを確認しました。${v.line}`:v.line);
       root.querySelector('.exam-warning').textContent=s.practical?.warning||s.practical?.callNote||'';
       root.querySelector('.exam-context').textContent=`${v.title} ／ ${s.date} ／ ${mockPlan.place} ／ ${mockPlan.weather} ／ ${s.wind.label}（訓練設定）／ 風速計 ${(environment?.wind?.speed??s.wind.speed??0).toFixed(1)} m/s（模擬）`;
-      root.querySelector('.exam-time').textContent=v.flight?'計時は試験員が管理しています':s.stage==='reception'||s.stage==='result'?'':`試験員の時計 ${Math.floor(s.stageElapsed/60)}:${String(Math.floor(s.stageElapsed%60)).padStart(2,'0')}`;
+      root.querySelector('.exam-time').textContent=v.flight?(s.flightOnly?'':'計時は試験員が管理しています'):s.stage==='reception'||s.stage==='result'?'':`試験員の時計 ${Math.floor(s.stageElapsed/60)}:${String(Math.floor(s.stageElapsed%60)).padStart(2,'0')}`;
     },
     destroy() {window.removeEventListener('keydown',key);originalParent.insertBefore(stageElement,originalNext);stageElement.hidden=false;root.remove();document.body.classList.remove('exam-active');}
   };

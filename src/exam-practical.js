@@ -5,6 +5,7 @@ import {examinerInstructions} from './exam-content.js';
 const angle=(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b));
 const distance=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
 const speed=d=>Math.hypot(d.vx||0,d.vz||0);
+export const practicalLimits=Object.freeze({square:480,eight:480,abnormal:360,inspection:720});
 export function practicalPlan(subject,extraLegs=0,emergencyFraction=.5) {
   const id=subject==='inspection'?'square':subject,layout=layouts[id],h=layout.takeoff;
   const step=(kind,target,label,extra={})=>({kind,target:{...target},label,...extra});
@@ -104,8 +105,7 @@ export function tickPractical(previous,sample,dt) {
     const intentional=p.courseId==='abnormal'?Math.abs(input.yaw||0)>.12&&Math.abs(angle(d.yaw,prior.yaw))/dt>.08:inputActive&&moved;
     if(intentional)emit(p,'instruction','次の指示前の操縦による移動・姿勢変化','premature');
   }
-  const limit=p.subject==='eight'?480:p.subject==='abnormal'?360:p.subject==='inspection'?720:480;
-  if(p.elapsed>limit)emit(p,'fatal','制限時間超過');
+  if(p.elapsed>practicalLimits[p.subject])emit(p,'fatal','制限時間超過');
   if(layouts[p.courseId].markers.some(marker=>touchesCone(d,marker)))emit(p,'fatal','コーンとの接触');
   p.speedTime=speed(d)>=safetyLimits.dangerousSpeed?p.speedTime+dt:0;
   if(p.speedTime>=safetyLimits.speedHold)emit(p,'fatal','危険な速度');

@@ -513,6 +513,10 @@ select {
 .exam-center {position:relative;min-height:0;overflow:hidden}
 .exam-center .sim-stage {height:100%;min-height:0;width:100%;position:absolute;inset:0}
 .exam-center .sim-stage .hud {display:none!important}
+.exam-flight-only .exam-center .sim-stage .top-right,.exam-flight-only .exam-center .sim-stage .telemetry-status {display:flex!important}
+.exam-flight-only .exam-center .sim-stage .top-right,.exam-flight-only .exam-center .sim-stage .telemetry-status {position:absolute;left:12px;right:auto;bottom:auto;width:auto;max-width:calc(100% - 24px);transform:none;flex-wrap:wrap;justify-content:flex-start;gap:6px 12px;padding:6px 10px;box-sizing:border-box;font-size:12px}
+.exam-flight-only .exam-center .sim-stage .top-right {top:12px}
+.exam-flight-only .exam-center .sim-stage .telemetry-status {top:50px}
 .exam-paper {color-scheme:light;height:100%;overflow:auto;background:#52645a;padding:24px;box-sizing:border-box}
 .exam-paper form {max-width:1000px;margin:auto;background:#f5f0df;color:#27332f;padding:28px 34px;border-top:14px solid #747b78;box-shadow:0 8px 24px #0005;border-radius:10px;line-height:1.6}
 .exam-paper form>label {display:block;margin:14px 0}

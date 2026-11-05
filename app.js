@@ -921,9 +921,11 @@ function renderReadouts() {
   // The readout is the barometric altimeter, which can differ from the true height.
   ui.altitude.textContent = `${(state.running ? state.altimeter : d.y).toFixed(1)}m`;
   ui.speed.textContent = `${Math.hypot(d.vx, d.vz, d.vy).toFixed(1)}m/s`;
-  ui.time.textContent = formatTime(state.elapsed);
+  const flightOnly=examSession?.flightOnly&&examSession.practical;
+  ui.time.textContent = formatTime(flightOnly?flightOnly.elapsed:state.elapsed);
   const mission = phaseMission[state.phase];
-  const remaining = taskLimits[mission] ? Math.max(0, taskLimits[mission] - state.taskElapsed) : null;
+  const remaining = flightOnly ? Math.max(0,examModules.practical.practicalLimits[flightOnly.subject]-flightOnly.elapsed)
+    : taskLimits[mission] ? Math.max(0, taskLimits[mission] - state.taskElapsed) : null;
   ui.taskTime.textContent = remaining === null ? "--:--" : formatTime(remaining);
   ui.battery.textContent = `${state.batteryPct.toFixed(0)}%`;
   const positionHold = state.presentation ? state.courseId!=="abnormal" : usesPositionHold(state.phase);

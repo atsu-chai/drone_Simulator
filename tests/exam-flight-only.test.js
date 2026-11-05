@@ -5,6 +5,7 @@ import {examPaper} from '../src/exam-ui.js';
 import {subjects} from '../src/training.js';
 import {courseIdFor,layouts} from '../src/course-layout.js';
 import {createFlightState} from '../src/session-rules.js';
+import {practicalLimits} from '../src/exam-practical.js';
 import {createPhysicalExam} from './helpers/exam-flight.js';
 const stages=['flightcheck','square','eight','abnormal'];
 const parked={drone:{x:0,z:2.5,y:0,vx:0,vy:0,vz:0,yaw:0},input:{},touchdowns:[],groundTime:0,time:0};
@@ -27,6 +28,9 @@ test('every flight is flown from start to result in calm and light wind',()=>{
     assert.equal(session.exam.flights.length,1);assert.deepEqual(session.exam.completed,[flightOnly]);
     assert.ok(session.exam.events.every(e=>!/^(pre|post|flight-record|desk|incident)/.test(e.code)));
   }
+});
+test('readout limits match the exam stage limits',()=>{
+  assert.deepEqual(practicalLimits,{square:480,eight:480,abnormal:360,inspection:720});
 });
 test('going over the limit stops the flight instead of moving on to the next stage',()=>{
   for(const [flightOnly,limit] of [['flightcheck',720],['square',480],['eight',480],['abnormal',360]]) {
