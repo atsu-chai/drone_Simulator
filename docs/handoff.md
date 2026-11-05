@@ -12,7 +12,7 @@
 
 ## 開発フォルダの移動（2026-11-05）
 
-- ユーザー指定により、ローカル開発フォルダを `/Users/ooshitaatsushinin/program/drone` から `/Users/ooshitaatsushinin/project/drone_similater` へ移動した。フォルダ名は指定どおり `drone_similater`。GitHubのリポジトリ名は変更していない。
+- ユーザー指定により、ローカル開発フォルダを `/Users/ooshitaatsushinin/program/drone` から `/Users/ooshitaatsushinin/project/drone_simulator` へ移動した。当初の `drone_similater` はユーザーの訂正により `drone_simulator` へ変更済み。GitHubのリポジトリ名は変更していない。
 - 移動前の作業ツリーはクリーン。専用ブランチ `codex/move-development-folder` を作成した。
 - 同一ディスク上でフォルダ全体を移動。Git・隠しファイル・ローカル設定とデータを含む1,006項目を比較し、ファイル内容のSHA-256、シンボリックリンクの参照先、ディレクトリ構成が移動前後で一致することを確認。旧フォルダは残していない。
 - 移動先で `npm test` 全71件成功、`npm run check` と `git diff --check` 成功（2026-11-05）。アプリの機能・表示・販売停止設定は変更していない。ブラウザ・実コントローラーの追加検証は未実施。
