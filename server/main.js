@@ -111,7 +111,7 @@ export function createApp({dbPath=resolve(root,'.data/service.sqlite'),origin='h
       }
       if(!['GET','HEAD'].includes(req.method)) return json(res,405,{error:'許可されていません。'});
       const publicPath=path==='/'?'/home.html':decodeURIComponent(path);
-      if(publicPath==='/src/premium-mission.js' && !hasAccess(accountFor(req)) && !devAccess(req)) return json(res,403,{error:'検証参加または有効な契約が必要です。'});
+      if(['/src/premium-mission.js','/src/exam-flow.js','/src/exam-content.js','/src/exam-scoring.js','/src/exam-practical.js','/src/exam-ui.js'].includes(publicPath) && !hasAccess(accountFor(req)) && !devAccess(req)) return json(res,403,{error:'検証参加または有効な契約が必要です。'});
       if(!/^\/(?:home\.html|index\.html|learn\.html|account\.html|legal\.html|contact\.html|app\.js|site\.js|styles\.css|site\.css|src\/[a-z-]+\.js|assets\/[a-zA-Z0-9_./-]+)$/.test(publicPath)||publicPath.includes('..')) return json(res,404,{error:'見つかりません。'});
       const file=resolve(root,`.${publicPath}`);if(!statSync(file).isFile()) return json(res,404,{error:'見つかりません。'});
       res.writeHead(200,{'Content-Type':({'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.jpg':'image/jpeg','.glb':'model/gltf-binary','.hdr':'application/octet-stream'})[extname(file)]||'application/octet-stream','Cache-Control':'no-cache'});res.end(req.method==='HEAD'?undefined:readFileSync(file));

@@ -8,10 +8,10 @@ import {evaluateFlightCoaching,coachingMessages} from './src/flight-coaching.js'
 import {createFlightState, transitionFlightPhase, navigationTarget, desiredAltitude, landedAt, pauseFlight, recordSessionInput, phaseMission, taskLimits, squareTargets, figureEightTargets} from "./src/session-rules.js";
 import {evaluateFlightSafety, safetyMessages, coneDimensions} from "./src/flight-safety.js";
 import { flightModel, createFlightPhysics, usesPositionHold } from "./src/flight-physics.js";
-import { windPresets, windBearingLabel } from "./src/flight-environment.js";
+import { windPresets, windBearingLabel, stepEnvironment } from "./src/flight-environment.js";
 import { createMotorAudio, motorAudioParameters } from "./src/motor-audio.js";
 import { layouts, expectedHeading, figureEightLap, abnormalTargets } from "./src/course-layout.js";
-import { createCourseScene } from "./src/course-scene.js";
+import { createCourseScene, addExamField, setExamField } from "./src/course-scene.js";
 import { createDemonstration } from "./src/demonstration.js";
 import { versions, course, evaluateSample, subjects, historyStore } from "./src/training.js";
 import * as THREE from "three";
@@ -519,7 +519,7 @@ function resizeRenderer() {
   const inset=document.getElementById('aircraftInsetViewport').getBoundingClientRect();
   world.insetRect={x:inset.left-rect.left,y:rect.bottom-inset.bottom,width:inset.width,height:inset.height};
   world.compactFrames=null;
-  if(width<=1200) {
+  if(width<=1200&&!examSession) {
     const local=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return {top:r.top-rect.top,bottom:r.bottom-rect.top};};
     const headerBottom=Math.max(...['.top-left','.view-controls','.telemetry-status'].map(selector=>local(selector).bottom),document.getElementById('aircraftInset').hidden?0:local('.aircraft-inset').bottom);
     const footerTop=Math.min(...['.course-legend','.top-right','.bottom-center'].map(selector=>local(selector).top));
@@ -541,11 +541,13 @@ function updateThreeWorld(dt) {
     field.annotations.visible=state.cameraMode!=='pilot';
     field.markerLabels.visible=state.cameraMode!=='pilot';
     field.guides.visible=state.mode==='practice' || Boolean(state.presentation);
+    if(examSession&&!field.exam)addExamField(field);
+    if(field.exam)setExamField(field,Boolean(examSession));
   }
   world.pilotEye.set(layout.pilot.x, 1.65, layout.pilot.z);
   world.drone.position.set(-d.x, d.y + aircraftDimensions.centerHeight, d.z);
   world.drone.rotation.set(d.pitch, -d.yaw, -d.roll);
-  world.headingArrow.visible=state.mode==='practice' || Boolean(state.presentation);
+  world.headingArrow.visible=!examSession&&(state.mode==='practice' || Boolean(state.presentation));
 
   if (world.droneMixer) {
     world.droneMixer.timeScale = clamp((d.thrustNewtons - 0.5) / 4.5, 0, 3.2);
@@ -582,6 +584,7 @@ function updateThreeWorld(dt) {
     marker.visible = marker.userData.missions.includes(markerMission);
     const active = state.mode === "practice" && marker.userData.keys.includes(activeKey);
     // Fixed physical markers stay visible in mock exams; only practice adds a highlight.
+    marker.children[0].material.color.setHex(examSession?0xeac52b:0xf07824);
     marker.children[0].material.emissive.setHex(active ? 0x572500 : 0x000000);
   }
 
@@ -618,7 +621,7 @@ function updateThreeWorld(dt) {
   const zoomControl=document.getElementById('aircraftZoomEnabled');
   zoomControl.disabled=!teachingView;
   const visualOnly=document.getElementById('visualOnly').checked;
-  const showInset=teachingView && zoomControl.checked && !visualOnly;
+  const showInset=!examSession&&teachingView && zoomControl.checked && !visualOnly;
   const insetPanel=document.getElementById('aircraftInset');
   if(insetPanel.dataset.view!==state.cameraMode) {insetPanel.dataset.view=state.cameraMode;resizeRenderer();}
   if(insetPanel.hidden===showInset) {insetPanel.hidden=!showInset;resizeRenderer();}
@@ -726,6 +729,7 @@ function setPhase(phase) {
 }
 
 function reset(nextSubject) {
+  if(examScreen){examScreen.destroy();examScreen=null;examSession=null;examFlightStage=null;state.running=false;}
   presentationNarrator.reset();
   const selectedSubject=typeof nextSubject==="string"?nextSubject:state.subject;
   state.presentation=null;
@@ -746,10 +750,13 @@ function reset(nextSubject) {
   ui.modeBadge.textContent=state.mode==="practice"?"練習モード":"模擬試験";
   buildChecklist();
   setPhase("preflight");
+  document.getElementById('checklistPanel').hidden=selectedSubject==='exam';
+  if(selectedSubject==='exam'){ui.start.disabled=false;ui.start.textContent='本番形式の受付へ';}
 }
 
 async function startExam() {
   if(state.running || state.presentation) return;
+  if(state.subject==='exam'){await startFullExam();return;}
   // Browsers only allow audio to begin from the user's start click.
   if(document.getElementById("motorSoundEnabled").checked)motorAudio.start();
   pollController(0);
@@ -794,6 +801,7 @@ function readInput() {
 const updatePhysics = createFlightPhysics({state,clamp,trainingNow,targetAltitude,currentNavigationTarget,angleDifference});
 
 function updateMission(dt) {
+  if(examSession){if(state.running)advanceExam(dt,true);return;}
   if(!state.running || state.paused)return;
   evaluateFlightSafety(state,dt);
   if(state.evaluation.fatal){state.elapsed=(trainingNow()-state.startTime)/1000;finishExam();return;}
@@ -816,6 +824,7 @@ function updateMission(dt) {
 function isLandedAt(point) { return landedAt(state,point); }
 
 function finishExam() {
+  if(examSession){sendExam({type:"interrupt",reason:"入力・利用権の中断"});return;}
   const endingPhase=state.phase;
   const result=summarizeFlight(state);
   state.running=false;
@@ -960,7 +969,12 @@ function loop() {
   pollController(frameDt);
   const input = readInput();
   renderInputMonitor(input);
+  if(examSession&&!examModules.flow.isExamFlight(examSession)){
+    if(examSession.stage!=='result')stepEnvironment(state.environment,frameDt,1.5);
+    advanceExam(frameDt,false);
+  }
   advanceFlightFrame(state,frameDt,input,updatePhysics,updateMission);
+  if(examScreen)examScreen.render(examSession,state.environment,state.paused,examPauseReason);
   updateThreeWorld(frameDt);
   updateMotorSound();
   renderReadouts();
@@ -989,8 +1003,8 @@ function angleDifference(a, b) {
   return Math.atan2(Math.sin(a - b), Math.cos(a - b));
 }
 
-function currentNavigationTarget() { return navigationTarget(state); }
-function targetAltitude() { return desiredAltitude(state); }
+function currentNavigationTarget() { return examSession?.practical?examModules.practical.practicalTarget(examSession.practical):navigationTarget(state); }
+function targetAltitude() { return examSession?.practical?examModules.practical.practicalAltitude(examSession.practical):desiredAltitude(state); }
 
 ui.modeButtons.forEach((button) => {
   button.addEventListener("click", () => setMode(button.dataset.mode));
@@ -1045,7 +1059,7 @@ function updatePresentation(dt) {
   if(player.paused)document.getElementById("presentationPause").textContent=sample.done?"もう一度再生":"再生";
 }
 document.getElementById("watchButton").addEventListener("click",()=>{
-  const subject=state.subject;reset();
+  const subject=state.subject==='exam'?'full':state.subject;reset();
   const timeline=createDemonstration(subject);
   state.presentation={timeline,time:0,speed:Number(document.getElementById("presentationSpeed").value),paused:false};
   ui.modeBadge.textContent="解説付き見本";
@@ -1067,7 +1081,7 @@ document.getElementById('voiceEnabled').addEventListener('change',()=>{
   if(state.presentation)updatePresentation(0);
   else if(document.getElementById('voiceEnabled').checked)speakNarration(ui.examiner.textContent);
 });
-document.querySelectorAll("[data-camera]").forEach(button=>button.addEventListener("click",()=>{state.cameraMode=button.dataset.camera;world.snapCamera=true;document.querySelectorAll("[data-camera]").forEach(item=>item.classList.toggle("active",item===button));}));
+document.querySelectorAll("[data-camera]").forEach(button=>button.addEventListener("click",()=>{if(examSession)return;state.cameraMode=button.dataset.camera;world.snapCamera=true;document.querySelectorAll("[data-camera]").forEach(item=>item.classList.toggle("active",item===button));}));
 
 function getParticipantId() {
   try {let id=localStorage.getItem("drone.participant.v1");if(!id){id=crypto.randomUUID();localStorage.setItem("drone.participant.v1",id);}return id;}catch{return "unsaved";}
@@ -1075,6 +1089,7 @@ function getParticipantId() {
 function trainingNow() { return state.simulationTime * 1000; }
 let accessGranted = false;
 let premiumMission = null;
+let examSession = null, examScreen = null, examModules = null, examFlightStage = null, examPauseReason = '', examSaved = false;
 const savedHistory = historyStore({getItem:key=>window.localStorage.getItem(key),setItem:(key,value)=>window.localStorage.setItem(key,value),removeItem:key=>window.localStorage.removeItem(key)});
 const controllerInput=createControllerInput({
   load:()=>JSON.parse(localStorage.getItem('drone.calibration.v2')||'null'),
@@ -1099,6 +1114,7 @@ function pollController(dt) {
   const recheck=document.getElementById('recheckButton');recheck.hidden=!controllerStatus.hasSaved;recheck.disabled=busy;
 }
 function pauseTraining(message) {
+  if(examSession){pauseFullExam(message);return;}
   if(!pauseFlight(state))return;
   if(!state.developerMode){controllerInput.requireConfirmation();state.calibration=null;}
   presentationNarrator.reset();
@@ -1156,11 +1172,12 @@ document.getElementById("exportHistoryButton").addEventListener("click",()=>{
   const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="drone-history.json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
 setInterval(async()=>{
-  if(!state.running || state.subject==="demo") return;
+  if((!state.running&&!examSession) || examSession?.stage==='result' || state.subject==="demo") return;
   try {const status=await fetch("/api/status").then(r=>r.json());if(!status.access){accessGranted=false;pauseTraining("利用期間が終了しました。履歴を保存して終了します。");finishExam();}}
   catch {pauseTraining("利用状況を確認できません。一度終了して再接続してください。");}
 },30000);
 renderHistory();
+state.subject=document.getElementById("subjectSelect").value;
 const initialSubject=new URLSearchParams(location.search).get("subject");
 if(subjects[initialSubject]) {state.subject=initialSubject;document.getElementById("subjectSelect").value=initialSubject;}
 fetch("/api/status").then(response=>response.json()).then(status=>{
@@ -1176,3 +1193,68 @@ initThreeWorld();
 reset();
 setMode("practice");
 requestAnimationFrame(loop);
+
+
+async function startFullExam() {
+  ui.start.disabled=true;
+  try {
+    const status=await fetch('/api/status').then(r=>r.json());
+    if(!status.access){ui.examiner.textContent='本番形式には全科目と同じ利用権が必要です。';return;}
+    pollController(0);
+    if(!state.threeReady||!state.inputReady||(!state.developerMode&&!controllerStatus.centered)||!inputCentered(readInput())) {ui.examiner.textContent='3Dの読込と入力の操作確認を終え、スティックを中立にしてください。';return;}
+    const [flow,practical,screen]=await Promise.all([import('./src/exam-flow.js'),import('./src/exam-practical.js'),import('./src/exam-ui.js')]);
+    examModules={flow,practical};
+    const now=new Date(),local=new Date(now.getTime()+9*3600000);
+    examSession=flow.createExam({seed:crypto.getRandomValues(new Uint32Array(1))[0],date:local.toISOString().slice(0,10),epoch:local.getTime(),wind:{label:windPresets[state.environment.preset].label,speed:state.environment.wind.speed}});
+    if(document.getElementById('motorSoundEnabled').checked)motorAudio.start();
+    state.mode='exam';state.cameraMode='pilot';world.snapCamera=true;state.running=false;state.paused=false;state.keys.clear();
+    examSaved=false;examPauseReason='';
+    examScreen=screen.createExamUI({stageElement:document.querySelector('.sim-stage'),send:sendExam,resume:resumeFullExam,exit:()=>{reset('exam');resizeRenderer();}});
+    examScreen.render(examSession,state.environment);resizeRenderer();
+  } catch(error) {ui.examiner.textContent='本番形式の準備に失敗しました。利用権と読込を確認してください。';console.error(error);}
+  finally {ui.start.disabled=false;}
+}
+// One stray click outside the window must not discard a whole exam. Paper stages keep
+// running; flight stops the aircraft and resumes only from checked, neutral sticks.
+function pauseFullExam(message) {
+  if(!examModules.flow.isExamFlight(examSession)||!pauseFlight(state))return;
+  if(!state.developerMode){controllerInput.requireConfirmation();state.calibration=null;}
+  examPauseReason=message;sendExam({type:'pause',reason:message});
+}
+function resumeFullExam() {
+  if(!examSession||!state.paused)return;
+  pollController(0);
+  const ready=state.developerMode?inputCentered(keyboardInput(state.keys)):controllerStatus.canFly&&controllerStatus.centered;
+  if(!ready){examPauseReason='接続と中立の確認を終え、操縦入力を離してから再開してください。';examScreen?.render(examSession,state.environment,true,examPauseReason);return;}
+  state.paused=false;state.physicsAccumulator=0;examPauseReason='';examScreen?.render(examSession,state.environment,false);
+}
+function saveFullExam() {
+  if(examSaved||examSession.stage!=='result')return;
+  examSaved=true;
+  const result=examModules.flow.examResult(examSession);
+  try {savedHistory.append({participantId:getParticipantId(),id:crypto.randomUUID(),at:new Date().toISOString(),versions,conditions:flightConditions(),subject:'exam',mode:'exam',score:result.fatal?0:result.remaining,elapsed:examSession.elapsed,interrupted:Boolean(examSession.interrupted||examSession.pauses),developerMode:state.developerMode,examRows:result.rows,events:[],flightRecords:[],feedback:[],progress:[]});renderHistory();}catch{}
+}
+function sendExam(event) {
+  if(!examSession)return;
+  examSession=examModules.flow.reduceExam(examSession,event);syncExamFlight();saveFullExam();examScreen?.render(examSession,state.environment,state.paused,examPauseReason);
+}
+function syncExamFlight() {
+  const flying=examModules.flow.isExamFlight(examSession),p=examSession.practical;
+  if(flying&&p) {
+    const phase=examModules.practical.practicalPhase(p);
+    if(examFlightStage!==examSession.stage) {
+      if(state.drone.y>.001){sendExam({type:'interrupt',reason:'接地前のコース変更を中止'});return;}
+      transitionFlightPhase(state,phase);state.hasTakenOff=false;state.groundTime=0;state.touchdowns=[];state.keys.clear();
+      examFlightStage=examSession.stage;world.snapCamera=true;resizeRenderer();
+    }
+    state.phase=phase;state.squareIndex=Math.max(0,p.step-1);state.eightIndex=p.eightIndex;state.abnormalIndex=Math.min(3,Math.max(0,p.step-1));
+    Object.assign(takeoffPoint,layouts[p.courseId].takeoff);
+  }
+  state.running=flying&&examSession.stage!=='result';
+  if(!flying){state.keys.clear();state.command={throttle:0,forward:0,strafe:0,yaw:0};}
+}
+function advanceExam(dt,flight) {
+  if(!examSession||state.paused)return;
+  const sample=flight?{drone:state.drone,input:state.rawInput,gust:state.environment.gust,touchdowns:state.touchdowns,groundTime:state.groundTime,windSpeed:state.environment.wind.speed,simulationTime:state.simulationTime}:null;
+  examSession=examModules.flow.tickExam(examSession,dt,sample);syncExamFlight();saveFullExam();
+}

@@ -33,7 +33,7 @@ export function createPhysicalSession(subject='full',environment={}) {
 // and like a person it must hold off wind itself once horizontal stabilisation is off.
 export function createVerificationPilot() {
   let previousYaw=0,trimRight=0,trimForward=0,lastTime=0,lastMode=null;
-  return state=>{
+  return (state,override={})=>{
     const d=state.drone,layout=layouts[state.courseId];
     const dt=Math.max(0,state.simulationTime-lastTime);lastTime=state.simulationTime;
     let target=navigationTarget(state)||layout.takeoff;
@@ -47,6 +47,8 @@ export function createVerificationPilot() {
     } else if(state.phase==='square') {
       desiredYaw=expectedHeading(state.phase,d,state.squareIndex,target);
     } else desiredYaw=0;
+    if(override.target)target=override.target;
+    if(override.yaw!==undefined)desiredYaw=override.yaw;
     previousYaw=desiredYaw;
     let vx=(target.x-d.x)*1.4,vz=(target.z-d.z)*1.4;
     const maxSpeed=state.phase==='eight'?1.05:1.1;
@@ -68,7 +70,7 @@ export function createVerificationPilot() {
       forward=(forwardA+trimForward)/flightModel.gravity/limit;
       strafe=(rightA+trimRight)/flightModel.gravity/limit;
     }
-    let desiredVy=clamp((desiredAltitude(state)-d.y)*.9-d.vy*.35,-.65,.85);
+    let desiredVy=clamp(((override.altitude??desiredAltitude(state))-d.y)*.9-d.vy*.35,-.65,.85);
     if(landing && d.y<.22)desiredVy=-.18;
     const throttle=desiredVy/(desiredVy>=0?flightModel.maxClimbRate:flightModel.maxDescentRate);
     return {forward:clamp(forward,-1,1),strafe:clamp(strafe,-1,1),throttle,yaw:clamp(angleDifference(desiredYaw,d.yaw)*2.8/flightModel.maxYawRate,-.8,.8)};

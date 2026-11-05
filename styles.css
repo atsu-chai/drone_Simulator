@@ -498,3 +498,40 @@ select {
 
 .check-label {display:flex;align-items:center;gap:8px;margin:8px 0;font-size:14px;}
 .top-right.visual-only span:nth-child(-n+2) strong {visibility:hidden;}
+
+/* Full-session exam console: flight remains the existing renderer and physics. */
+.exam-active {overflow:hidden}
+.exam-active .app-shell > .control-panel {visibility:hidden}
+.exam-console {position:fixed;inset:0;z-index:100;background:#142126;color:#f0f3ef;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(180px,1fr) auto;font-family:system-ui,sans-serif}
+.exam-console header {display:flex;flex-wrap:wrap;align-items:center;gap:20px;padding:12px 20px;border-bottom:1px solid #4c615e;background:#1c302f}
+.exam-console header p {font-size:12px;margin:4px 0}
+.exam-progress {display:flex;flex:1;min-width:0;gap:6px;list-style:none;margin:0;padding:0;font-size:12px}
+.exam-progress li {flex:1;min-width:0;color:#a6b6b1;padding:5px;border-bottom:3px solid transparent}
+.exam-progress [aria-current] {color:#fff;border-color:#f3c866}
+.exam-console button {cursor:pointer;background:#e9d7a4;color:#182725;border:1px solid #a99d7b;border-radius:5px;padding:10px 14px;font:inherit}
+.exam-console button:focus-visible,.exam-console input:focus-visible,.exam-console select:focus-visible {outline:3px solid #1c74bc;outline-offset:3px}
+.exam-center {position:relative;min-height:0;overflow:hidden}
+.exam-center .sim-stage {height:100%;min-height:0;width:100%;position:absolute;inset:0}
+.exam-center .sim-stage .hud {display:none!important}
+.exam-paper {color-scheme:light;height:100%;overflow:auto;background:#52645a;padding:24px;box-sizing:border-box}
+.exam-paper form {max-width:1000px;margin:auto;background:#f5f0df;color:#27332f;padding:28px 34px;border-top:14px solid #747b78;box-shadow:0 8px 24px #0005;border-radius:10px;line-height:1.6}
+.exam-paper form>label {display:block;margin:14px 0}
+.exam-paper h2 {font-size:21px;margin:0 0 16px}.exam-paper h2:not(:first-child){margin-top:24px}
+.exam-console input:not([type=checkbox]):not([type=radio]),.exam-console select {background:#fffef9;color:#152a27;border:1px solid #87998f;padding:8px;border-radius:3px;max-width:100%;box-sizing:border-box;font:inherit}
+.exam-console input:not([type=checkbox]):not([type=radio]) {width:100%;display:block}
+.exam-console input[type=checkbox],.exam-console input[type=radio] {margin-right:10px;width:18px;height:18px;accent-color:#216b5e}
+.exam-choice {display:flex;align-items:center;gap:8px;margin:12px 0}
+.exam-paper fieldset {margin:20px 0;padding:16px;border:1px solid #a0aa9e}.exam-paper legend {font-weight:700}
+.exam-fields {display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}
+.exam-airframe {position:relative;min-height:260px;background:radial-gradient(ellipse,#bdd0c4,#d9dfce);margin-bottom:18px;border-radius:20px;overflow:hidden}
+.exam-airframe svg {width:100%;height:260px;display:block}
+.exam-airframe button {position:absolute;transform:translate(-50%,-50%);max-width:150px;font-size:12px;padding:8px;background:#f9f3dd}
+.exam-airframe .observed {border:2px solid #287b62;background:#d4e9db}
+.exam-console table {width:100%;border-collapse:collapse;font-size:14px;margin:16px 0}
+.exam-console th,.exam-console td {border:1px solid #a6aea0;text-align:left;padding:10px}
+.exam-power {display:flex;gap:12px;margin:16px 0}
+.exam-console footer {padding:12px 20px;background:#1c302f;max-height:32vh;overflow:auto}
+.exam-context,.exam-time {color:#c0cfca;font-size:12px}.exam-line {font-size:18px;margin:8px 0}.exam-warning {color:#ffe090;margin:6px 0}
+.exam-calls {display:flex;gap:12px;align-items:end}.exam-calls label {flex:1;display:grid;gap:4px}.exam-calls select {width:100%}.exam-score {font-size:32px;font-weight:700}
+.exam-console [hidden] {display:none!important}
+@media(max-width:800px) {.exam-console header {gap:8px;padding:8px}.exam-progress {max-height:56px}.exam-console header>div {max-width:150px}.exam-console header>button {max-width:90px;font-size:11px}.exam-paper {padding:10px}.exam-paper form {padding:20px 16px}.exam-fields {grid-template-columns:1fr}.exam-calls {align-items:stretch;flex-direction:column}.exam-console footer {padding:8px 12px}.exam-line {font-size:15px}.exam-console table {font-size:12px}.exam-console th,.exam-console td {padding:5px}}

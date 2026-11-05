@@ -1,4 +1,4 @@
-export const versions = Object.freeze({ app: '0.7.0', course: 'mlit-basic-4', scoring: 'training-6', physics: '20261105', curriculum: 'basic-1' });
+export const versions = Object.freeze({ app: '0.8.0', course: 'mlit-basic-4', scoring: 'training-6', physics: '20261105', curriculum: 'basic-1' });
 export { squarePath } from './course-layout.js';
 import { squarePath, eightCenters, layouts, abnormalTargets, courseIdFor, fieldZone } from './course-layout.js';
 export const course = Object.freeze({ penalty: 1.5, failure: 2.5, grace: 2, squarePath, eightCenters, eightRadius: 2.5 });
@@ -55,6 +55,7 @@ export function summarizeEvents(events) {
 export {normalizedAxis} from './controller-input.js';
 export function calibrationValid(axes) { return axes.length>=4 && axes.slice(0,4).every(v=>Number.isFinite(v)&&Math.abs(v)<=.2); }
 export const subjects = {
+  exam:{label:'本番形式（通し）',phase:'preflight'},
   demo:{label:'無料体験：離陸・ホバリング・着陸',phase:'takeoff'},
   square:{label:'スクエア飛行',phase:'takeoff'},
   eight:{label:'8の字飛行',phase:'eightTakeoff'},

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createHmac} from 'node:crypto';
+import {createHmac,createHash} from 'node:crypto';
 import {mkdtempSync,rmSync,writeFileSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -30,10 +30,12 @@ test('local dev access opens subjects only on an explicit, local, non-commercial
   const closed=await (await fetch(normal+'/api/status')).json();
   assert.equal(closed.access,false);assert.equal(closed.localDev,false);
   assert.equal((await fetch(normal+'/src/premium-mission.js')).status,403);
+  for(const name of ['flow','content','scoring','practical','ui'])assert.equal((await fetch(normal+`/src/exam-${name}.js`)).status,403);
   const dev=await start('dev',{localDevAccess:true});
   const open=await (await fetch(dev+'/api/status')).json();
   assert.equal(open.access,true);assert.equal(open.localDev,true);assert.equal(open.authenticated,false);
   assert.equal((await fetch(dev+'/src/premium-mission.js')).status,200);
+  for(const name of ['flow','content','scoring','practical','ui'])assert.equal((await fetch(dev+`/src/exam-${name}.js`)).status,200);
   for(const path of ['/.env','/.data/service.sqlite','/server/main.js'])assert.equal((await fetch(dev+path)).status,404);
   const {request}=await import('node:http');
   const viaProxy=await new Promise((resolve,reject)=>{
@@ -101,4 +103,29 @@ test('checkout is gated, costs 10000 initially, locks duplicate clicks and retur
   assert.equal((await post('checkout',{acceptTerms:true})).status,409);
   assert.equal((await post('portal',{})).status,200);assert.equal(calls.at(-1).params.get('customer'),'cus_new');
   writeFileSync(readinessPath,JSON.stringify({verified:true,salesPaused:true}));assert.equal((await post('checkout',{acceptTerms:true})).status,503);
+});
+
+// Exercise the real HTTP handler without binding a socket; this also works in restricted environments.
+async function get(app,path,{host='localhost:8000',remote='127.0.0.1',cookie=''}={}) {
+  let status=200,body='';
+  await app.server.listeners('request')[0]({url:path,method:'GET',headers:{host,cookie},socket:{remoteAddress:remote}}, {setHeader(){},writeHead(code){status=code;},end(value){body=value?.toString()||'';}});
+  return {status,body};
+}
+test('full exam modules require existing all-subject access; dev opening stays local and account expiry revokes it',async t=>{
+  const normal=createApp({dbPath:':memory:'}),dev=createApp({dbPath:':memory:',localDevAccess:true});
+  t.after(()=>{normal.db.close();dev.db.close();});
+  const paths=['content','flow','scoring','practical','ui'].map(n=>`/src/exam-${n}.js`);
+  for(const path of paths){
+    assert.equal((await get(normal,path)).status,403);
+    assert.equal((await get(dev,path)).status,200);
+    assert.equal((await get(dev,path,{host:'public.example'})).status,403);
+    assert.equal((await get(dev,path,{remote:'192.0.2.10'})).status,403);
+  }
+  const now=Math.floor(Date.now()/1000),token='exam-test-session';
+  normal.db.prepare('INSERT INTO accounts(id,email,password,validation_until) VALUES(?,?,?,?)').run('exam','exam@example.invalid','unused',now+600);
+  normal.db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(createHash('sha256').update(token).digest('hex'),'exam',now+600);
+  for(const path of paths)assert.equal((await get(normal,path,{cookie:'drone_session='+token})).status,200);
+  normal.db.prepare('UPDATE accounts SET validation_until=0').run();
+  for(const path of paths)assert.equal((await get(normal,path,{cookie:'drone_session='+token})).status,403);
+  assert.equal((await get(normal,'/index.html')).status,200);
 });
