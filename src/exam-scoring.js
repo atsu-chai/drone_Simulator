@@ -15,6 +15,8 @@ export const scoringRules = {
   'wobble':{points:1,label:'ふらつき'}, 'smoothness':{points:1,label:'不円滑'}, 'heading':{points:1,label:'機首方向不良'},
   'fatal':{points:0,fatal:true,label:'中止に該当する事象'},
 };
+// The items a single flight can lose points on; used by the flight-only result.
+export const flightScoringCodes=['route','instruction','landing','safety-call','wobble','smoothness','heading','fatal'];
 export function scoreExam(events) {
   const rows=events.filter(e=>scoringRules[e.code]).map(e=>({...e,...scoringRules[e.code],applied:false}));
   const winners={};

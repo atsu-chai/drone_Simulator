@@ -9,14 +9,19 @@ export function chooseQuestions(seed=1) {
   for(let i=pool.length-1;i>0;i--){n=(Math.imul(n,1664525)+1013904223)>>>0;const j=n%(i+1);[pool[i],pool[j]]=[pool[j],pool[i]];}
   return pool.slice(0,4).map(q=>q.id);
 }
-export function createExam({seed=1,date='2026-11-06',epoch=0,wind={label:'無風',speed:0}}={}) {
-  return {stage:'reception',elapsed:0,stageElapsed:0,seed,date,epoch,wind,windChecks:{},questions:chooseQuestions(seed),name:'',events:[],answers:{},observed:{},daily:{},postDaily:{},metadata:{},postMetadata:{},flights:[],practical:null,oralIndex:0,power:{transmitter:false,aircraft:false},powerLog:[],completed:[],interrupted:false};
+const newPractical=(s,stage)=>createPractical(stage==='flightcheck'?'inspection':stage,{extraLegs:stage==='abnormal'?(s.seed>>>0)%3:0,emergencyFraction:.3+((s.seed>>>0)%40)/100});
+// `flightOnly` opens one flight stage directly and ends at the result, skipping papers and oral stages.
+export function createExam({seed=1,date='2026-11-06',epoch=0,wind={label:'無風',speed:0},flightOnly=null}={}) {
+  if(flightOnly&&!flightStages.includes(flightOnly))throw new Error(`Unknown flight stage: ${flightOnly}`);
+  const s={stage:'reception',elapsed:0,stageElapsed:0,seed,date,epoch,wind,windChecks:{},questions:chooseQuestions(seed),name:'',events:[],answers:{},observed:{},daily:{},postDaily:{},metadata:{},postMetadata:{},flights:[],practical:null,oralIndex:0,power:{transmitter:false,aircraft:false},powerLog:[],completed:[],interrupted:false,flightOnly};
+  if(flightOnly){s.stage=flightOnly;s.practical=newPractical(s,flightOnly);}
+  return s;
 }
 function issue(s,code,detail) {s.events.push({code,detail,stage:s.stage,time:s.elapsed});}
 function enter(s,stage) {
   if(group(stage)!==group(s.stage))s.stageElapsed=0;
   s.completed.push(s.stage);s.stage=stage;s.oralIndex=0;s.answers={};
-  s.practical=flightStages.includes(stage)?createPractical(stage==='flightcheck'?'inspection':stage,{extraLegs:stage==='abnormal'?(s.seed>>>0)%3:0,emergencyFraction:.3+((s.seed>>>0)%40)/100}):null;
+  s.practical=flightStages.includes(stage)?newPractical(s,stage):null;
 }
 function compareFields(s,actual,expected,major,minor) {
   for(const [key,value] of Object.entries(expected)) {
@@ -117,14 +122,15 @@ export function tickExam(previous,dt,sample=null) {
     if(s.practical.fatal) {enter(s,'result');return s;}
     if(s.practical.done) {
       if(s.practical.flight)s.flights.push({...s.practical.flight,subject:s.stage});
-      if(s.stage==='flightcheck') {for(const id of ['communication','propulsion','automatic'])s.observed[id]=true;enter(s,'preRecord');}
+      if(s.flightOnly)enter(s,'result');
+      else if(s.stage==='flightcheck') {for(const id of ['communication','propulsion','automatic'])s.observed[id]=true;enter(s,'preRecord');}
       else enter(s,s.stage==='square'?'eight':s.stage==='eight'?'abnormal':'post');
       return s;
     }
   }
   const limit=examStages.find(stage=>stage.id===s.stage).limit;
   if(limit&&s.stageElapsed>limit) {
-    if(beforeGroup.includes(s.stage)) {
+    if(beforeGroup.includes(s.stage)&&!s.flightOnly) {
       if(s.stage==='preRecord'){checkDaily(s,'preRecord');checkMetadata(s,s.metadata);}
       else issue(s,'pre-omission','飛行前点検の通算12分超過');
       if(s.stage==='flightcheck'&&(sample?.drone.y||0)>.001){issue(s,'fatal','飛行点検中に通算時間を超過');enter(s,'result');}

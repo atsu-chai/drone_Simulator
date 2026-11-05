@@ -5,9 +5,9 @@ import {createFlightState,transitionFlightPhase} from '../../src/session-rules.j
 import {createFlightPhysics} from '../../src/flight-physics.js';
 import {advanceFlightFrame} from '../../src/flight-frame.js';
 import {createVerificationPilot} from './physical-flight.js';
-export function createPhysicalExam({seed=7,preset='calm',fps=60}={}) {
-  let exam=createExam({seed}),active=null;
-  const state=createFlightState('exam',{preset,seed}),pilot=createVerificationPilot();
+export function createPhysicalExam({seed=7,preset='calm',fps=60,flightOnly=null}={}) {
+  let exam=createExam({seed,flightOnly}),active=null;
+  const state=createFlightState(flightOnly?`exam-${flightOnly}`:'exam',{preset,seed}),pilot=createVerificationPilot();
   const sync=()=>{
     state.running=isExamFlight(exam);
     if(!state.running)return;
@@ -17,6 +17,7 @@ export function createPhysicalExam({seed=7,preset='calm',fps=60}={}) {
   };
   const physics=createFlightPhysics({state,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),trainingNow:()=>state.simulationTime*1000,targetAltitude:()=>practicalAltitude(exam.practical),currentNavigationTarget:()=>practicalTarget(exam.practical),angleDifference:(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b))});
   const send=event=>{exam=reduceExam(exam,event);sync();};
+  sync();
   return {state,get exam(){return exam;},send,
     advance(seconds){exam=tickExam(exam,seconds);sync();},
     fly(){

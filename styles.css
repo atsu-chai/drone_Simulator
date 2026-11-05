@@ -529,6 +529,7 @@ select {
 .exam-airframe .observed {border:2px solid #287b62;background:#d4e9db}
 .exam-console table {width:100%;border-collapse:collapse;font-size:14px;margin:16px 0}
 .exam-console th,.exam-console td {border:1px solid #a6aea0;text-align:left;padding:10px}
+.exam-result-actions {display:flex;flex-wrap:wrap;gap:12px;margin-top:18px}
 .exam-power {display:flex;gap:12px;margin:16px 0}
 .exam-console footer {padding:12px 20px;background:#1c302f;max-height:32vh;overflow:auto}
 .exam-context,.exam-time {color:#c0cfca;font-size:12px}.exam-line {font-size:18px;margin:8px 0}.exam-warning {color:#ffe090;margin:6px 0}

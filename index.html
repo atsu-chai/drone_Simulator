@@ -57,7 +57,7 @@
           <section id="presentationControls" hidden aria-label="見本飛行の再生操作"><div class="segmented"><button id="presentationPause">一時停止</button><button id="presentationStop">見本を終了</button></div><label class="select-label">再生位置<input id="presentationSeek" type="range" min="0" value="0" step="0.1"></label><output id="presentationTime">00:00</output><label class="select-label">再生速度<select id="presentationSpeed"><option value="1">1倍</option><option value="2">2倍</option><option value="4">4倍</option></select></label></section><label><input id="voiceEnabled" type="checkbox"> 音声指示を有効にする</label><p id="narrationStatus" class="notice" role="status">音声オフ</p><p class="notice">見本を再開すると、現在の区間の説明を最初から読み上げます。</p>
           <p class="notice">検証版：公式合否は未評価です。対応機器は実機確認中。実機練習を併用してください。</p>
           <label class="select-label">練習科目<select id="subjectSelect">
-            <option value="exam">本番形式（通し）</option><option value="demo">無料体験：離陸・ホバリング・着陸</option><option value="square">スクエア飛行</option><option value="eight">8の字飛行</option><option value="abnormal">異常事態・緊急着陸</option><option value="full">通し練習</option>
+            <option value="exam">本番形式（通し）</option><optgroup label="本番形式の飛行のみ"><option value="exam-flightcheck">飛行のみ：飛行点検</option><option value="exam-square">飛行のみ：スクエア</option><option value="exam-eight">飛行のみ：8の字</option><option value="exam-abnormal">飛行のみ：異常事態</option></optgroup><option value="demo">無料体験：離陸・ホバリング・着陸</option><option value="square">スクエア飛行</option><option value="eight">8の字飛行</option><option value="abnormal">異常事態・緊急着陸</option><option value="full">通し練習</option>
           </select></label>
           <div class="segmented" role="group" aria-label="モード選択">
             <button class="active" data-mode="practice">練習</button>

@@ -1,13 +1,13 @@
 import {examStages,examParts,mockPlan,deskQuestions,airQuestions,poweredQuestions,inspectionItems,postItems,calls,incidentCases,incidentPrompt,incidentResponse,recordFields,unassessed} from './exam-content.js';
 import {examResult,isExamFlight,examClock} from './exam-flow.js';
-import {scoringRules} from './exam-scoring.js';
+import {scoringRules,flightScoringCodes} from './exam-scoring.js';
 import {practicalInstruction} from './exam-practical.js';
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const field=(id,label,value='')=>`<label>${escape(label)}<input name="${id}" value="${escape(value)}" autocomplete="off"></label>`;
 const choices=(q,answers={})=>`<fieldset><legend>${escape(q.prompt)}</legend>${q.choices.map((text,i)=>`<label class="exam-choice"><input type="radio" name="${q.id}" value="${i}" ${Number(answers[q.id]??-1)===i?'checked':''}>${escape(text)}</label>`).join('')}</fieldset>`;
 export function examView(s) {
   const stage=examStages.find(stage=>stage.id===s.stage);
-  return {title:stage.title,flight:isExamFlight(s),line:s.practical?practicalInstruction(s.practical):s.stage==='reception'?'氏名と保護具を確認し、注意事項を読んで受付を終えてください。':s.stage==='air'?airQuestions[s.oralIndex]?.prompt||'空域等の確認を終了してください。':s.stage==='result'?'本番形式を終了します。細目ごとの記録を確認してください。':'確認・操作を実施し、記録を提出してください。'};
+  return {title:stage.title,flight:isExamFlight(s),line:s.practical?practicalInstruction(s.practical):s.stage==='reception'?'氏名と保護具を確認し、注意事項を読んで受付を終えてください。':s.stage==='air'?airQuestions[s.oralIndex]?.prompt||'空域等の確認を終了してください。':s.stage==='result'?`${s.flightOnly?'飛行':'本番形式'}を終了します。細目ごとの記録を確認してください。`:'確認・操作を実施し、記録を提出してください。'};
 }
 function inspectionDiagram(items,s,post) {
   const positions={body:[48,42],propeller:[17,16],frame:[72,16],control:[83,78],identification:[40,80],power:[43,28],battery:[44,58],remote:[67,43],remarks:[70,76],communication:[25,70],propulsion:[20,20],automatic:[65,42],mount:[48,15],exterior:[18,20],heat:[48,50],debris:[24,78]};
@@ -24,6 +24,12 @@ function metadata(s,post=false) {
 function power(s) {
   return `<div class="exam-power">${['transmitter','aircraft'].map(id=>`<button type="button" data-power="${id}">${id==='transmitter'?'送信機':'機体'} 電源${s.stage==='post'?'OFF':'ON'}（現在 ${s.power[id]?'ON':'OFF'}）</button>`).join('')}</div>`;
 }
+const clock=seconds=>`${Math.floor(seconds/60)}分${String(Math.floor(seconds%60)).padStart(2,'0')}秒`;
+function resultSummary(s,r) {
+  if(!s.flightOnly)return {title:'模擬採点（公式の合否ではない）',score:r.fatal?'試験中止':`残り ${r.remaining} / 100点`,note:r.fatal?'中止に該当する事象がありました。':`参考の70点と比較：${r.meetsReference?'基準点以上':'基準点未満'}`,actions:''};
+  const stage=examStages.find(stage=>stage.id===s.flightOnly);
+  return {title:`${stage.title}の飛行のみ／模擬採点（公式の合否ではない）`,score:r.fatal?'試験中止':`減点 ${r.deduction}点`,note:`${r.fatal?'中止に該当する事象がありました。':'この飛行の減点のみです。机上、口述、記録は含みません。'}／経過 ${clock(s.elapsed)}（制限 ${clock(stage.limit)}）`,actions:'<div class="exam-result-actions"><button type="button" data-retry>もう一度飛ぶ</button><button type="button" data-exit>科目選択へ戻る</button></div>'};
+}
 export function examPaper(s) {
   switch(s.stage) {
     case 'reception':return `<h2>本番形式の受付</h2><p>二等・基本・マルチローターの模擬試験を最初から最後まで行います。</p>${field('name','受験者氏名（この実行中の記録に使用）')}<label><input type="checkbox" name="helmet">ヘルメットを確認しました</label><label><input type="checkbox" name="glasses">保護メガネを確認しました</label><p>指示があるまで移動や姿勢変化をせず、確認結果は試験員へ呼称してください。各科目には制限時間があります。画面を離れると中断結果へ進みます。機体中心と訓練用の閾値で代理評価します。</p><p>氏名はこの画面内だけで使用し、送信・自動保存しません。</p><label><input type="checkbox" name="notice">注意事項を読みました</label><button>受付を終える</button>`;
@@ -35,14 +41,14 @@ export function examPaper(s) {
     case 'post':return '<h2>飛行後点検・記録／通算5分</h2>'+power(s)+inspectionSheet(s)+metadata(s,true)+`<h2>飛行記録（様式1相当）</h2><p>本日の年月日：${s.date}／場所：${mockPlan.place}／飛行前の総飛行時間：${mockPlan.priorMinutes}分</p><p>離着陸の観測時刻（この実行の時計）：${s.flights.map(f=>`${escape(f.subject)} ${examClock(s,f.tookOff)} → ${examClock(s,f.landed)}`).join('、')}。時刻と所要時間を記入してください。時間は分、小数第2位まで入力できます。</p><div class="exam-fields">${recordFields.map(([id,label])=>field(id,label,s.record?.[id])).join('')}${s.flights.map((f,i)=>field(`off${i}`,`${i+1}回目 離陸時刻 HH:MM:SS`,s.record?.[`off${i}`])+field(`on${i}`,`${i+1}回目 着陸時刻 HH:MM:SS`,s.record?.[`on${i}`])+field(`minutes${i}`,`${i+1}回目 飛行時間（分）`,s.record?.[`minutes${i}`])).join('')}${field('minutes','今回の飛行時間の合計（分）',s.record?.minutes)}${field('total','累積の総飛行時間（分）',s.record?.total)}</div><button>飛行後の記録を提出</button>`;
     case 'incident1':return `<h2>6-1／3分</h2><p>${escape(incidentPrompt)}</p>${incidentCases.map(c=>`<label class="exam-choice"><input type="checkbox" name="cases" value="${c.id}">${escape(c.text)}</label>`).join('')}<button>回答を提出</button>`;
     case 'incident2':return '<h2>6-2／3分</h2>'+choices({...incidentResponse,id:'answer'})+'<button>回答を提出</button>';
-    case 'result': {const r=examResult(s);return `<h2>模擬採点（公式の合否ではない）</h2><p class="exam-score">${r.fatal?'試験中止':`残り ${r.remaining} / 100点`}</p><p>${r.fatal?'中止に該当する事象がありました。':`参考の70点と比較：${r.meetsReference?'基準点以上':'基準点未満'}`}${s.interrupted?'／中断あり':''}${r.pauses?`／一時停止 ${r.pauses}回`:''}</p><table><thead><tr><th>減点細目</th><th>適用した減点</th></tr></thead><tbody>${Object.entries(scoringRules).map(([code,rule])=>`<tr><th>${escape(rule.label)}</th><td>${rule.fatal?(r.fatal?'中止':'なし'):r.rows.filter(row=>row.code===code&&row.applied).reduce((sum,row)=>sum+row.points,0)}</td></tr>`).join('')}</tbody></table><h2>記録された事象</h2><table><thead><tr><th>細目</th><th>記録</th><th>減点</th></tr></thead><tbody>${r.rows.map(row=>`<tr><td>${escape(row.label)}</td><td>${escape(row.detail)}</td><td>${row.fatal?'中止':row.applied?row.points:'最大1件のため適用なし'}</td></tr>`).join('')||'<tr><td colspan="3">減点事象なし</td></tr>'}</tbody></table><p>未評価：${unassessed.join('、')}。実機との一致・公式の合否を保証しません。</p>`;}
+    case 'result': {const r=examResult(s),summary=resultSummary(s,r),rules=Object.entries(scoringRules).filter(([code])=>!s.flightOnly||flightScoringCodes.includes(code));return `<h2>${escape(summary.title)}</h2><p class="exam-score">${summary.score}</p><p>${summary.note}${s.interrupted?'／中断あり':''}${r.pauses?`／一時停止 ${r.pauses}回`:''}</p><table><thead><tr><th>減点細目</th><th>適用した減点</th></tr></thead><tbody>${rules.map(([code,rule])=>`<tr><th>${escape(rule.label)}</th><td>${rule.fatal?(r.fatal?'中止':'なし'):r.rows.filter(row=>row.code===code&&row.applied).reduce((sum,row)=>sum+row.points,0)}</td></tr>`).join('')}</tbody></table><h2>記録された事象</h2><table><thead><tr><th>細目</th><th>記録</th><th>減点</th></tr></thead><tbody>${r.rows.map(row=>`<tr><td>${escape(row.label)}</td><td>${escape(row.detail)}</td><td>${row.fatal?'中止':row.applied?row.points:'最大1件のため適用なし'}</td></tr>`).join('')||'<tr><td colspan="3">減点事象なし</td></tr>'}</tbody></table><p>未評価：${unassessed.join('、')}。実機との一致・公式の合否を保証しません。</p>${summary.actions}`;}
     default:return '';
   }
 }
-export function createExamUI({stageElement,send,exit,resume=()=>{}}) {
+export function createExamUI({stageElement,send,exit,resume=()=>{},title='本番形式（通し）',retry=null}) {
   const originalParent=stageElement.parentNode,originalNext=stageElement.nextSibling;
   const root=document.createElement('section');root.className='exam-console';root.setAttribute('aria-label','本番形式コンソール');
-  root.innerHTML='<header><div><strong>本番形式（通し）</strong><p>進め方は受験機関の案内を優先</p></div><ol class="exam-progress"></ol><button type="button" data-exit>終了して科目選択へ</button></header><div class="exam-center"><div class="exam-paper"><form novalidate></form></div></div><footer><div class="exam-context"></div><p class="exam-line" aria-live="polite"></p><p class="exam-warning" role="status"></p><div class="exam-calls"><label>呼称を選択（数字キー1〜5でも呼称できます）<select aria-label="受験者の呼称"><option value="">選択してください</option>'+calls.map((c,i)=>`<option value="${c.id}">${i+1}：${escape(c.text)}</option>`).join('')+'</select></label><button type="button" data-call>選択した呼称を伝える（Space）</button></div><span class="exam-time"></span></footer>';
+  root.innerHTML=`<header><div><strong>${escape(title)}</strong><p>進め方は受験機関の案内を優先</p></div><ol class="exam-progress"></ol>${retry?'<button type="button" data-retry>最初からやり直す</button>':''}<button type="button" data-exit>終了して科目選択へ</button></header>`+'<div class="exam-center"><div class="exam-paper"><form novalidate></form></div></div><footer><div class="exam-context"></div><p class="exam-line" aria-live="polite"></p><p class="exam-warning" role="status"></p><div class="exam-calls"><label>呼称を選択（数字キー1〜5でも呼称できます）<select aria-label="受験者の呼称"><option value="">選択してください</option>'+calls.map((c,i)=>`<option value="${c.id}">${i+1}：${escape(c.text)}</option>`).join('')+'</select></label><button type="button" data-call>選択した呼称を伝える（Space）</button></div><span class="exam-time"></span></footer>';
   document.body.append(root);root.querySelector('.exam-center').prepend(stageElement);document.body.classList.add('exam-active');
   let current=null,signature='';const form=root.querySelector('form');
   const resumeButton=document.createElement('button');resumeButton.type='button';resumeButton.dataset.resume='';resumeButton.textContent='再開する';resumeButton.hidden=true;
@@ -51,6 +57,7 @@ export function createExamUI({stageElement,send,exit,resume=()=>{}}) {
   root.addEventListener('click',e=>{
     if(e.target.closest('[data-exit]'))exit();
     if(e.target.closest('[data-resume]'))resume();
+    if(e.target.closest('[data-retry]'))retry?.();
     if(e.target.closest('[data-call]'))call();
     const observe=e.target.closest('[data-observe]');if(observe)send({type:'observe',id:observe.dataset.observe});
     const power=e.target.closest('[data-power]');if(power)send({type:'power',device:power.dataset.power});
@@ -84,7 +91,7 @@ export function createExamUI({stageElement,send,exit,resume=()=>{}}) {
       current=s;const v=examView(s),nextSignature=JSON.stringify([s.stage,s.oralIndex,s.observed,s.daily,s.postDaily,s.power,s.practical?.step,s.practical?.mode]);
       if(nextSignature!==signature) {
         signature=nextSignature;form.innerHTML=examPaper(s);
-        root.querySelector('.exam-progress').innerHTML=examParts.map((part,i)=>`<li ${part.stages.includes(s.stage)?'aria-current="step"':''}>${i+1} ${escape(part.title)}</li>`).join('');
+        root.querySelector('.exam-progress').innerHTML=s.flightOnly?'':examParts.map((part,i)=>`<li ${part.stages.includes(s.stage)?'aria-current="step"':''}>${i+1} ${escape(part.title)}</li>`).join('');
       }
       stageElement.hidden=!v.flight;root.querySelector('.exam-paper').hidden=v.flight;
       root.querySelector('.exam-calls').hidden=!v.flight||paused;

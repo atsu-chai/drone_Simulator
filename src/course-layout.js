@@ -32,7 +32,7 @@ export const layouts = {
 export function courseIdFor(phase, subject='demo') {
   if(phase.startsWith('eight')) return 'eight';
   if(['abnormalTakeoff','abnormal','emergencyHover','emergencyTransit','emergencyArrival','landing'].includes(phase)) return 'abnormal';
-  if(['preflight','result','postflight'].includes(phase)) return ['eight','abnormal'].includes(subject) ? subject : 'square';
+  if(['preflight','result','postflight'].includes(phase)) {const id=subject.replace(/^exam-/,'');return ['eight','abnormal'].includes(id) ? id : 'square';}
   return 'square';
 }
 export function insideRectangle(point, width, depth, centerZ) {

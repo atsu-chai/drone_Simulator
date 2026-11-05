@@ -578,7 +578,7 @@ function updateThreeWorld(dt) {
     : ["squareLanding", "eightLanding", "demoLanding"].includes(state.phase) ? "landing"
     : state.phase === "landing" ? "emergencyLanding" : null;
   const markerMission = ["preflight", "postflight", "result"].includes(mission)
-    ? state.subject === "eight" ? "eight" : state.subject === "abnormal" ? "abnormal" : "square"
+    ? state.courseId
     : mission;
   for (const marker of world.courseMarkers) {
     marker.visible = marker.userData.missions.includes(markerMission);
@@ -729,7 +729,7 @@ function setPhase(phase) {
 }
 
 function reset(nextSubject) {
-  if(examScreen){examScreen.destroy();examScreen=null;examSession=null;examFlightStage=null;state.running=false;}
+  if(examScreen){examScreen.destroy();examScreen=null;examSession=null;examFlightStage=null;state.running=false;state.mode=examReturnMode;}
   presentationNarrator.reset();
   const selectedSubject=typeof nextSubject==="string"?nextSubject:state.subject;
   state.presentation=null;
@@ -750,13 +750,15 @@ function reset(nextSubject) {
   ui.modeBadge.textContent=state.mode==="practice"?"練習モード":"模擬試験";
   buildChecklist();
   setPhase("preflight");
-  document.getElementById('checklistPanel').hidden=selectedSubject==='exam';
-  if(selectedSubject==='exam'){ui.start.disabled=false;ui.start.textContent='本番形式の受付へ';}
+  const examSubject=isExamSubject(selectedSubject);
+  document.getElementById('checklistPanel').hidden=examSubject;
+  if(examSubject){ui.start.disabled=false;ui.start.textContent=selectedSubject==='exam'?'本番形式の受付へ':'飛行を開始';}
+  if(subjects[selectedSubject]?.examStage)ui.examiner.textContent='受付と口述を省き、本番と同じ画面と採点でこの飛行だけを行います。';
 }
 
 async function startExam() {
   if(state.running || state.presentation) return;
-  if(state.subject==='exam'){await startFullExam();return;}
+  if(isExamSubject(state.subject)){await startFullExam();return;}
   // Browsers only allow audio to begin from the user's start click.
   if(document.getElementById("motorSoundEnabled").checked)motorAudio.start();
   pollController(0);
@@ -1059,7 +1061,7 @@ function updatePresentation(dt) {
   if(player.paused)document.getElementById("presentationPause").textContent=sample.done?"もう一度再生":"再生";
 }
 document.getElementById("watchButton").addEventListener("click",()=>{
-  const subject=state.subject==='exam'?'full':state.subject;reset();
+  const subject=state.subject==='exam'?'full':subjects[state.subject].demoSubject||state.subject;reset();
   const timeline=createDemonstration(subject);
   state.presentation={timeline,time:0,speed:Number(document.getElementById("presentationSpeed").value),paused:false};
   ui.modeBadge.textContent="解説付き見本";
@@ -1089,7 +1091,7 @@ function getParticipantId() {
 function trainingNow() { return state.simulationTime * 1000; }
 let accessGranted = false;
 let premiumMission = null;
-let examSession = null, examScreen = null, examModules = null, examFlightStage = null, examPauseReason = '', examSaved = false;
+let examSession = null, examScreen = null, examModules = null, examFlightStage = null, examPauseReason = '', examSaved = false, examReturnMode = 'practice';
 const savedHistory = historyStore({getItem:key=>window.localStorage.getItem(key),setItem:(key,value)=>window.localStorage.setItem(key,value),removeItem:key=>window.localStorage.removeItem(key)});
 const controllerInput=createControllerInput({
   load:()=>JSON.parse(localStorage.getItem('drone.calibration.v2')||'null'),
@@ -1195,6 +1197,7 @@ setMode("practice");
 requestAnimationFrame(loop);
 
 
+function isExamSubject(subject) {return subject==='exam'||Boolean(subjects[subject]?.examStage);}
 async function startFullExam() {
   ui.start.disabled=true;
   try {
@@ -1205,12 +1208,14 @@ async function startFullExam() {
     const [flow,practical,screen]=await Promise.all([import('./src/exam-flow.js'),import('./src/exam-practical.js'),import('./src/exam-ui.js')]);
     examModules={flow,practical};
     const now=new Date(),local=new Date(now.getTime()+9*3600000);
-    examSession=flow.createExam({seed:crypto.getRandomValues(new Uint32Array(1))[0],date:local.toISOString().slice(0,10),epoch:local.getTime(),wind:{label:windPresets[state.environment.preset].label,speed:state.environment.wind.speed}});
+    const flightOnly=subjects[state.subject].examStage||null;
+    examSession=flow.createExam({seed:crypto.getRandomValues(new Uint32Array(1))[0],date:local.toISOString().slice(0,10),epoch:local.getTime(),wind:{label:windPresets[state.environment.preset].label,speed:state.environment.wind.speed},flightOnly});
     if(document.getElementById('motorSoundEnabled').checked)motorAudio.start();
-    state.mode='exam';state.cameraMode='pilot';world.snapCamera=true;state.running=false;state.paused=false;state.keys.clear();
+    examReturnMode=state.mode;state.mode='exam';state.cameraMode='pilot';world.snapCamera=true;state.running=false;state.paused=false;state.keys.clear();
     examSaved=false;examPauseReason='';
-    examScreen=screen.createExamUI({stageElement:document.querySelector('.sim-stage'),send:sendExam,resume:resumeFullExam,exit:()=>{reset('exam');resizeRenderer();}});
-    examScreen.render(examSession,state.environment);resizeRenderer();
+    const leave=()=>{reset(state.subject);resizeRenderer();};
+    examScreen=screen.createExamUI({stageElement:document.querySelector('.sim-stage'),send:sendExam,resume:resumeFullExam,exit:leave,title:subjects[state.subject].label,retry:flightOnly?()=>{leave();startFullExam();}:null});
+    syncExamFlight();examScreen.render(examSession,state.environment);resizeRenderer();
   } catch(error) {ui.examiner.textContent='本番形式の準備に失敗しました。利用権と読込を確認してください。';console.error(error);}
   finally {ui.start.disabled=false;}
 }
@@ -1232,7 +1237,7 @@ function saveFullExam() {
   if(examSaved||examSession.stage!=='result')return;
   examSaved=true;
   const result=examModules.flow.examResult(examSession);
-  try {savedHistory.append({participantId:getParticipantId(),id:crypto.randomUUID(),at:new Date().toISOString(),versions,conditions:flightConditions(),subject:'exam',mode:'exam',score:result.fatal?0:result.remaining,elapsed:examSession.elapsed,interrupted:Boolean(examSession.interrupted||examSession.pauses),developerMode:state.developerMode,examRows:result.rows,events:[],flightRecords:[],feedback:[],progress:[]});renderHistory();}catch{}
+  try {savedHistory.append({participantId:getParticipantId(),id:crypto.randomUUID(),at:new Date().toISOString(),versions,conditions:flightConditions(),subject:state.subject,mode:'exam',score:result.fatal?0:result.remaining,elapsed:examSession.elapsed,interrupted:Boolean(examSession.interrupted||examSession.pauses),developerMode:state.developerMode,examRows:result.rows,events:[],flightRecords:[],feedback:[],progress:[]});renderHistory();}catch{}
 }
 function sendExam(event) {
   if(!examSession)return;
