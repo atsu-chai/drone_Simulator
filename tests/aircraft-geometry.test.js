@@ -18,8 +18,8 @@ test('different aircraft assets fit the shared envelope without distortion',()=>
 test('the tilted collision envelope contains the entire swept rotor cylinder',()=>{
   for(const pitch of [-.49,0,.49])for(const roll of [-.49,0,.49]) {
     const envelope=aircraftContactEnvelope(pitch,roll);
-    for(let i=0;i<360;i++)for(const y of [-.15,.15]) {
-      const a=i*Math.PI/180,x=.55*Math.cos(a),z=.55*Math.sin(a);
+    for(let i=0;i<360;i++)for(const y of [-aircraftDimensions.halfHeight,aircraftDimensions.halfHeight]) {
+      const a=i*Math.PI/180,x=aircraftDimensions.radius*Math.cos(a),z=aircraftDimensions.radius*Math.sin(a);
       const rx=x*Math.cos(roll)-y*Math.sin(roll),ry=x*Math.sin(roll)+y*Math.cos(roll);
       const py=ry*Math.cos(pitch)-z*Math.sin(pitch),pz=ry*Math.sin(pitch)+z*Math.cos(pitch);
       assert.ok(Math.abs(py)<=envelope.halfHeight+1e-10);

@@ -1,5 +1,6 @@
-// Training envelope, not a claim about a particular certified aircraft.
-export const aircraftDimensions=Object.freeze({radius:.55,halfHeight:.15,centerHeight:.18});
+// Assumed 350 mm wheelbase plus rotor sweep, matching the mass in flightModel.
+// A training envelope, not a claim about a particular certified aircraft.
+export const aircraftDimensions=Object.freeze({radius:.3,halfHeight:.1,centerHeight:.12});
 
 // Keep both model variants inside the same collision envelope, including rotor sweep.
 export function fitAircraftBounds(min,max) {

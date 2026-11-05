@@ -7,7 +7,9 @@ import {advanceFlightFrame} from './src/flight-frame.js';
 import {evaluateFlightCoaching,coachingMessages} from './src/flight-coaching.js';
 import {createFlightState, transitionFlightPhase, navigationTarget, desiredAltitude, landedAt, pauseFlight, recordSessionInput, phaseMission, taskLimits, squareTargets, figureEightTargets} from "./src/session-rules.js";
 import {evaluateFlightSafety, safetyMessages, coneDimensions} from "./src/flight-safety.js";
-import { flightModel, createFlightPhysics } from "./src/flight-physics.js";
+import { flightModel, createFlightPhysics, usesPositionHold } from "./src/flight-physics.js";
+import { windPresets, windBearingLabel } from "./src/flight-environment.js";
+import { createMotorAudio, motorAudioParameters } from "./src/motor-audio.js";
 import { layouts, expectedHeading, figureEightLap, abnormalTargets } from "./src/course-layout.js";
 import { createCourseScene } from "./src/course-scene.js";
 import { createDemonstration } from "./src/demonstration.js";
@@ -51,6 +53,7 @@ const ui = {
   taskTime: document.getElementById("taskTimeReadout"),
   battery: document.getElementById("batteryReadout"),
   stability: document.getElementById("stabilityReadout"),
+  wind: document.getElementById("windReadout"),
   examiner: document.getElementById("examinerLine"),
   checklistTitle: document.getElementById("checklistTitle"),
   checklist: document.getElementById("checklist"),
@@ -160,7 +163,8 @@ const phases = {
 const missionOrder = ["preflight", "square", "eight", "abnormal", "postflight", "result"];
 const takeoffPoint = { ...layouts.square.takeoff };
 const emergencyLandingPoint = { ...layouts.abnormal.takeoff };
-const wind = { speedMps: 0, directionDeg: 30 };
+const motorAudio = createMotorAudio();
+const windHeading = from => (from + 180) * Math.PI / 180;
 
 
 
@@ -209,12 +213,13 @@ function initThreeWorld() {
   world.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   world.scene = new THREE.Scene();
-  world.scene.background = new THREE.Color(0x152126);
-  world.scene.fog = new THREE.Fog(0x152126, 60, 110);
+  world.scene.background = new THREE.Color(0xa9c3d6);
+  world.scene.fog = new THREE.Fog(0xc4d3da, 70, 240);
 
-  world.camera = new THREE.PerspectiveCamera(54, 1, 0.1, 120);
+  world.camera = new THREE.PerspectiveCamera(54, 1, 0.1, 320);
   world.insetCamera=new THREE.PerspectiveCamera(34,1,.1,20);
   world.insetCamera.layers.set(1);
+  world.insetBackground=new THREE.Color(0x152126);
   world.clock = new THREE.Clock();
   world.cameraLookTarget = new THREE.Vector3(0, 1, 0);
   world.cameraDesiredTarget = new THREE.Vector3(0, 1, 0);
@@ -253,7 +258,8 @@ function loadEnvironment() {
     (texture) => {
       texture.mapping = THREE.EquirectangularReflectionMapping;
       world.scene.environment = texture;
-
+      world.scene.background = texture;
+      world.scene.backgroundBlurriness = .12;
     },
     undefined,
     (error) => console.warn("HDR環境光を読み込めませんでした。", error)
@@ -268,8 +274,21 @@ function showThreeError() {
 }
 
 function buildTrainingField() {
-  const ground=new THREE.Mesh(new THREE.PlaneGeometry(90,90),new THREE.MeshStandardMaterial({color:0x27363b,roughness:.95}));
+  const textures=new THREE.TextureLoader();
+  const groundMaterial=new THREE.MeshStandardMaterial({color:0x8f9c78,roughness:1});
+  const groundMap=(file,property,srgb=false)=>{
+    const texture=textures.load(`assets/textures/grass/${file}`,()=>{groundMaterial.needsUpdate=true;});
+    texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.repeat.set(90,90);
+    texture.anisotropy=world.renderer.capabilities.getMaxAnisotropy();
+    if(srgb)texture.colorSpace=THREE.SRGBColorSpace;
+    groundMaterial[property]=texture;
+  };
+  groundMap('diffuse.jpg','map',true);groundMap('normal.jpg','normalMap');groundMap('roughness.jpg','roughnessMap');
+  const ground=new THREE.Mesh(new THREE.PlaneGeometry(420,420),groundMaterial);
   ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;world.scene.add(ground);
+  // Texture repeats read as a grid from above; only the pilot's low view needs it.
+  world.ground={mesh:ground,textured:groundMaterial,plain:new THREE.MeshStandardMaterial({color:0x56663f,roughness:1})};
+  buildWindsock();
   for(const id of Object.keys(layouts)) {
     world.fields[id]=createCourseScene(id,addCourseCone);
     world.scene.add(world.fields[id].group);
@@ -339,6 +358,38 @@ function fitDroneModel(model,rotors) {
   const fit=fitAircraftBounds(bounds.min,bounds.max);
   model.scale.setScalar(fit.scale);
   model.position.set(fit.offset.x,fit.offset.y,fit.offset.z);
+}
+
+// A real cue for the wind the physics applies: the sock lifts and swings with it.
+function buildWindsock() {
+  const group=new THREE.Group();
+  group.position.set(-7,0,20);
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(.035,.05,4.2,10),new THREE.MeshStandardMaterial({color:0xd8dde0,roughness:.5}));
+  pole.position.y=2.1;pole.castShadow=true;group.add(pole);
+  const pivot=new THREE.Group();pivot.position.y=4.2;group.add(pivot);
+  const sock=new THREE.Group();pivot.add(sock);
+  for(let i=0;i<5;i++) {
+    const radius=.26-.036*i,next=.26-.036*(i+1);
+    const band=new THREE.Mesh(new THREE.CylinderGeometry(next,radius,.32,14,1,true),new THREE.MeshStandardMaterial({color:i%2?0xf4f1ea:0xe2522f,side:THREE.DoubleSide,roughness:.8}));
+    band.rotation.x=Math.PI/2;band.position.z=.16+.32*i;band.castShadow=true;sock.add(band);
+  }
+  world.scene.add(group);
+  world.windsock={pivot,sock};
+}
+
+function updateWindsock(dt) {
+  if(!world.windsock)return;
+  const environment=state.environment;
+  const mean=windPresets[environment.preset].meanSpeed;
+  const speed=state.running?environment.wind.speed:mean;
+  const heading=state.running&&speed>.01?Math.atan2(environment.wind.x,environment.wind.z):windHeading(environment.windFromDeg);
+  const lift=Math.min(1,speed/4.5);
+  // The scene mirrors logical x so that the pilot's right matches the screen.
+  world.windsock.pivot.rotation.y=-heading;
+  const time=performance.now()/1000;
+  const flutter=lift>0?Math.sin(time*(3+lift*5))*.05+Math.sin(time*7.3)*.03:0;
+  const target=(1-lift)*1.45+flutter-.04;
+  world.windsock.sock.rotation.x+=(target-world.windsock.sock.rotation.x)*(1-Math.exp(-dt*4));
 }
 
 function buildDrone() {
@@ -501,8 +552,9 @@ function updateThreeWorld(dt) {
     world.droneMixer.update(dt);
   }
   world.propellers.forEach((prop, index) => {
-    const thrustAcceleration = d.thrustNewtons / flightModel.massKg;
-    const rotorSpeed = 8 + thrustAcceleration * 2.8;
+    // Fallback mesh order is rear/front in scene x, which mirrors logical x.
+    const motorThrust = d.motors?.[[3,2,0,1][index]] ?? d.thrustNewtons / 4;
+    const rotorSpeed = 8 + motorThrust * 7.2;
     prop.rotation.y += (index % 2 ? -1 : 1) * rotorSpeed * dt;
   });
   world.rotorDiscs.forEach((disc) => {
@@ -510,6 +562,8 @@ function updateThreeWorld(dt) {
     disc.material.opacity = clamp((thrustAcceleration - 3) / 55, 0, 0.22);
   });
 
+  updateWindsock(dt);
+  world.ground.mesh.material=state.cameraMode==='pilot'?world.ground.textured:world.ground.plain;
   world.shadow.position.set(-d.x, 0.04, d.z);
   const shadowScale = clamp(1.15 - d.y * 0.12, 0.35, 1.15);
   world.shadow.scale.set(shadowScale, shadowScale, shadowScale);
@@ -535,10 +589,10 @@ function updateThreeWorld(dt) {
   const positionBlend=world.snapCamera?1:1-Math.exp(-dt*5);
   const target=new THREE.Vector3(0,0.5,layout.centerZ);
   const compactFrame=world.compactFrames?.[state.cameraMode];
-  world.camera.far=compactFrame?.far??120;
+  world.camera.far=compactFrame?.far??320;
   // Keep the entire fitted course clear; distant background may still fade.
-  world.scene.fog.near=compactFrame?compactFrame.far:60;
-  world.scene.fog.far=compactFrame?compactFrame.far+50:110;
+  world.scene.fog.near=compactFrame?compactFrame.far:70;
+  world.scene.fog.far=compactFrame?compactFrame.far+50:240;
   if(!compactFrame)world.camera.clearViewOffset();
   if(compactFrame) {
     world.camera.setViewOffset(canvas.clientWidth,canvas.clientHeight,compactFrame.offset.x,compactFrame.offset.y,canvas.clientWidth,canvas.clientHeight);
@@ -563,7 +617,8 @@ function updateThreeWorld(dt) {
   const teachingView=state.mode==='practice' || Boolean(state.presentation);
   const zoomControl=document.getElementById('aircraftZoomEnabled');
   zoomControl.disabled=!teachingView;
-  const showInset=teachingView && zoomControl.checked;
+  const visualOnly=document.getElementById('visualOnly').checked;
+  const showInset=teachingView && zoomControl.checked && !visualOnly;
   const insetPanel=document.getElementById('aircraftInset');
   if(insetPanel.dataset.view!==state.cameraMode) {insetPanel.dataset.view=state.cameraMode;resizeRenderer();}
   if(insetPanel.hidden===showInset) {insetPanel.hidden=!showInset;resizeRenderer();}
@@ -578,7 +633,10 @@ function updateThreeWorld(dt) {
     renderer.setViewport(box.x,box.y,box.width,box.height);
     renderer.setScissor(box.x,box.y,box.width,box.height);renderer.setScissorTest(true);
     const updateShadows=renderer.shadowMap.autoUpdate;renderer.shadowMap.autoUpdate=false;
+    // The close-up keeps a plain backdrop so the aircraft stands out from the sky.
+    const background=world.scene.background;world.scene.background=world.insetBackground;
     renderer.render(world.scene,camera);
+    world.scene.background=background;
     renderer.shadowMap.autoUpdate=updateShadows;renderer.setScissorTest(false);
     renderer.setViewport(0,0,canvas.clientWidth,canvas.clientHeight);
     document.getElementById('insetHeading').textContent=`${Math.round(((d.yaw*180/Math.PI)%360+360)%360)}°`;
@@ -677,7 +735,7 @@ function reset(nextSubject) {
     state.evaluation.events.push({type:"interrupted",points:0,phase:state.phase,time:state.elapsed,position:{x:state.drone.x,z:state.drone.z}});
     finishExam();
   }
-  Object.assign(state,createFlightState(selectedSubject));
+  Object.assign(state,createFlightState(selectedSubject,{preset:document.getElementById("windSelect").value,seed:crypto.getRandomValues(new Int32Array(1))[0]}));
   Object.assign(takeoffPoint,layouts[state.courseId].takeoff);
   state.keys.clear();
   document.getElementById("pauseButton").hidden = true;
@@ -692,6 +750,8 @@ function reset(nextSubject) {
 
 async function startExam() {
   if(state.running || state.presentation) return;
+  // Browsers only allow audio to begin from the user's start click.
+  if(document.getElementById("motorSoundEnabled").checked)motorAudio.start();
   pollController(0);
   if(state.subject!=="demo") {
     ui.start.disabled=true;
@@ -774,10 +834,15 @@ function finishExam() {
   retry.hidden=result.score===100 && result.progress.every(task=>task.complete);
   retry.textContent=`${subjects[result.retrySubject].label}を重点練習`;
   retry.dataset.subject=result.retrySubject;
-  const record={participantId:getParticipantId(),environment:{userAgent:navigator.userAgent,viewport:[innerWidth,innerHeight]},id:crypto.randomUUID(),at:new Date().toISOString(),versions,subject:state.subject,mode:state.mode,score:result.score,elapsed:state.elapsed,endingPhase,progress:result.progress,retrySubject:result.retrySubject,interrupted:state.interrupted,developerMode:state.developerMode,calibration:state.sessionCalibration,inputConfigurations:state.inputConfigurations,events:state.evaluation.events,feedback:result.feedback,flightRecords:state.flightRecords};
+  const record={participantId:getParticipantId(),environment:{userAgent:navigator.userAgent,viewport:[innerWidth,innerHeight]},id:crypto.randomUUID(),at:new Date().toISOString(),versions,conditions:flightConditions(),subject:state.subject,mode:state.mode,score:result.score,elapsed:state.elapsed,endingPhase,progress:result.progress,retrySubject:result.retrySubject,interrupted:state.interrupted,developerMode:state.developerMode,calibration:state.sessionCalibration,inputConfigurations:state.inputConfigurations,events:state.evaluation.events,feedback:result.feedback,flightRecords:state.flightRecords};
   try { savedHistory.append(record);document.getElementById("saveStatus").textContent="このブラウザに履歴を保存しました。"; }
   catch {document.getElementById("saveStatus").textContent="履歴を保存できません。今回のログをダウンロードしてください。";}
   renderHistory();renderEvents(record);
+}
+
+function flightConditions() {
+  const {preset,seed,windFromDeg}=state.environment;
+  return {windPreset:preset,windMeanMps:windPresets[preset].meanSpeed,windFromDeg,seed};
 }
 
 function recordTelemetry() {
@@ -785,7 +850,8 @@ function recordTelemetry() {
   if (second === state.lastLogSecond) return;
   state.lastLogSecond = second;
   const d = state.drone;
-  const positionHold = !["abnormalTakeoff", "abnormal", "emergencyHover", "emergencyTransit", "emergencyArrival", "landing"].includes(state.phase);
+  const positionHold = usesPositionHold(state.phase);
+  const airflow = state.environment.wind;
   state.flightRecords.push({
     scenario_id: phaseMission[state.phase] === "abnormal" ? "S01_SENSOR_FAIL" : "N01_NORMAL",
     elapsed_s: second,
@@ -805,8 +871,8 @@ function recordTelemetry() {
     link_state: "OK",
     sensor_status: positionHold ? "NOMINAL" : "POSITION_HOLD_OFF",
     battery_pct: Number(state.batteryPct.toFixed(1)),
-    wind_speed_mps: wind.speedMps,
-    wind_dir_deg: wind.directionDeg,
+    wind_speed_mps: Number(airflow.speed.toFixed(2)),
+    wind_from_deg: airflow.speed>0 ? Number(((Math.atan2(-airflow.x,-airflow.z)*180/Math.PI+360)%360).toFixed(1)) : null,
   });
 }
 
@@ -816,6 +882,7 @@ function downloadFlightLog() {
     metadata: {
       versions,
       subject: state.subject,
+      conditions: flightConditions(),
       interrupted: state.interrupted,
       calibration: state.sessionCalibration,
       input_configurations: state.inputConfigurations,
@@ -824,7 +891,7 @@ function downloadFlightLog() {
       geodetic_frame: "LOCAL_ENU",
       origin: { name: "A点離着陸基準点", x_east_m: 0, y_north_m: 0, z_up_m: 0 },
       official_course_limits_s: taskLimits,
-      note: "位置・センサー周波数は3D再現用の仮定です。",
+      note: "位置・センサー周波数・風は3D再現用の仮定です。実測値ではありません。",
     },
     task_times_s: state.taskTimes,
     flight_records: state.flightRecords,
@@ -840,14 +907,17 @@ function downloadFlightLog() {
 
 function renderReadouts() {
   const d = state.drone;
-  ui.altitude.textContent = `${d.y.toFixed(1)}m`;
+  // The readout is the barometric altimeter, which can differ from the true height.
+  ui.altitude.textContent = `${(state.running ? state.altimeter : d.y).toFixed(1)}m`;
   ui.speed.textContent = `${Math.hypot(d.vx, d.vz, d.vy).toFixed(1)}m/s`;
   ui.time.textContent = formatTime(state.elapsed);
   const mission = phaseMission[state.phase];
   const remaining = taskLimits[mission] ? Math.max(0, taskLimits[mission] - state.taskElapsed) : null;
   ui.taskTime.textContent = remaining === null ? "--:--" : formatTime(remaining);
   ui.battery.textContent = `${state.batteryPct.toFixed(0)}%`;
-  const positionHold = state.presentation ? state.courseId!=="abnormal" : !["abnormalTakeoff", "abnormal", "emergencyHover", "emergencyTransit", "emergencyArrival", "landing"].includes(state.phase);
+  const positionHold = state.presentation ? state.courseId!=="abnormal" : usesPositionHold(state.phase);
+  const {meanSpeed,label}=windPresets[state.environment.preset];
+  ui.wind.textContent = state.presentation ? "見本：風の計算なし" : meanSpeed>0 ? `風 平均${meanSpeed.toFixed(1)}m/s ${windBearingLabel(state.environment.windFromDeg)}から（訓練設定）` : `${label}（訓練設定）`;
   ui.stability.textContent = positionHold ? "位置安定 ON" : "位置安定 OFF";
   ui.stability.classList.toggle("warning", !positionHold);
   const degrees=yaw=>`${Math.round((yaw*180/Math.PI+360)%360)}°`;
@@ -876,6 +946,12 @@ function renderInputMonitor(input) {
   ui.inputValues.textContent=`高度 ${Math.round(raw.throttle*100)}%・旋回 ${Math.round(raw.yaw*100)}%・前後 ${Math.round(raw.forward*100)}%・左右 ${Math.round(raw.strafe*100)}%`;
 }
 
+function updateMotorSound() {
+  if(!state.running || state.paused || state.presentation || !document.getElementById("motorSoundEnabled").checked){motorAudio.update(null);return;}
+  const d=state.drone,pilot=layouts[state.courseId].pilot;
+  motorAudio.update(motorAudioParameters(d.motors,flightModel.maxThrustNewtons/4,{distance:Math.hypot(d.x-pilot.x,d.y-1.65,d.z-pilot.z),lateral:d.x-pilot.x}));
+}
+
 function loop() {
   const frameDt = world.clock ? Math.min(0.1, world.clock.getDelta()) : 0.016;
   if(state.presentation) {
@@ -886,6 +962,7 @@ function loop() {
   renderInputMonitor(input);
   advanceFlightFrame(state,frameDt,input,updatePhysics,updateMission);
   updateThreeWorld(frameDt);
+  updateMotorSound();
   renderReadouts();
   requestAnimationFrame(loop);
 }
@@ -1058,6 +1135,8 @@ document.getElementById('recheckButton').addEventListener('click',()=>{
   controllerInput.begin({full:true});pollController(0);
 });
 document.getElementById("subjectSelect").addEventListener("change",(event)=>{reset(event.target.value);});
+document.getElementById("windSelect").addEventListener("change",()=>{if(!state.running)reset();else document.getElementById("windSelect").value=state.environment.preset;});
+document.getElementById("visualOnly").addEventListener("change",event=>{document.querySelector(".top-right").classList.toggle("visual-only",event.target.checked);});
 document.getElementById("pauseButton").addEventListener("click",()=>{
   if(!state.paused) {pauseTraining("一時停止しました。");return;}
   pollController(0);
@@ -1086,6 +1165,10 @@ const initialSubject=new URLSearchParams(location.search).get("subject");
 if(subjects[initialSubject]) {state.subject=initialSubject;document.getElementById("subjectSelect").value=initialSubject;}
 fetch("/api/status").then(response=>response.json()).then(status=>{
   accessGranted=Boolean(status.access);
+  if(status.localDev) {
+    if(!state.developerMode&&!state.running)document.getElementById("developerModeButton").click();
+    if(state.phase==='preflight' && !state.presentation)ui.examiner.textContent="ローカル開発用：ログインなしで全科目を利用できます。キーボード操作はONです。";
+  }
   if(!accessGranted && state.phase==='preflight' && !state.presentation)ui.examiner.textContent="登録不要の無料体験を利用できます。他の科目は検証参加者・契約者向けです。";
 }).catch(()=>{if(state.phase==='preflight' && !state.presentation)ui.examiner.textContent="無料体験を利用できます。全科目の利用には専用サーバーから起動してください。";});
 

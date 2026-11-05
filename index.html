@@ -33,7 +33,7 @@
         <div class="hud telemetry-status">
           <span id="stabilityReadout">位置安定 ON</span>
           <span>BAT <strong id="batteryReadout">100%</strong></span>
-          <span>無風（風の物理計算なし）</span>
+          <span id="windReadout">無風（訓練設定）</span>
         </div>
         <div class="hud bottom-center" id="examinerLine">
           飛行前点検を開始してください。
@@ -63,6 +63,16 @@
             <button class="active" data-mode="practice">練習</button>
             <button data-mode="exam">模擬</button>
           </div>
+          <label class="select-label">風の条件（訓練設定・実測ではありません）
+            <select id="windSelect">
+              <option value="calm">無風</option>
+              <option value="light" selected>微風 平均1.5m/s</option>
+              <option value="moderate">やや強い風 平均3m/s</option>
+              <option value="limit">上限付近 平均4m/s</option>
+            </select>
+          </label>
+          <label class="check-label"><input type="checkbox" id="motorSoundEnabled" checked> 機体の音を鳴らす</label>
+          <label class="check-label"><input type="checkbox" id="visualOnly"> 目視練習（高度・速度の数値と拡大を隠す）</label>
           <label class="select-label">
             コントローラー
             <select id="presetSelect">

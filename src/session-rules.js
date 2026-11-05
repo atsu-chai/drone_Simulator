@@ -1,10 +1,12 @@
 import {layouts,courseIdFor,squarePath,figureEightLap,abnormalTargets} from './course-layout.js';
 import {createEvaluation} from './training.js';
+import {createEnvironment} from './flight-environment.js';
+import {createFlightController} from './flight-controller.js';
 export const phaseMission={preflight:'preflight',takeoff:'square',square:'square',squareLanding:'square',eightTakeoff:'eight',eight:'eight',eightLanding:'eight',abnormalTakeoff:'abnormal',abnormal:'abnormal',emergencyHover:'abnormal',emergencyTransit:'abnormal',emergencyArrival:'abnormal',landing:'abnormal',postflight:'postflight',demoLanding:'square',result:'result'};
 export const taskLimits={square:480,eight:480,abnormal:360};
 export const squareTargets=squarePath.map((p,i)=>({...p,key:`square${p.label}${i}`}));
 export const figureEightTargets=[...figureEightLap,...figureEightLap];
-export function createFlightState(subject='demo') {
+export function createFlightState(subject='demo',environment={}) {
   const courseId=courseIdFor('preflight',subject),home=layouts[courseId].takeoff;
   return {subject,courseId,phase:'preflight',running:false,paused:false,interrupted:false,evaluation:createEvaluation(),
     checklistIndex:0,postflightIndex:0,checklistMistakes:0,startTime:0,elapsed:0,hoverTimer:0,squareTimer:0,squareIndex:0,eightIndex:0,abnormalIndex:0,emergencyHoverTimer:0,emergencyHoverPoint:null,
@@ -12,7 +14,8 @@ export function createFlightState(subject='demo') {
     responseDelays:[],respondedPhase:null,lastPhaseChange:0,physicsAccumulator:0,simulationTime:0,batteryPct:100,flightRecords:[],lastLogSecond:-1,hasTakenOff:false,groundTime:0,touchdowns:[],processedTouchdowns:0,safetyIssues:{},arc:{key:null,angle:null,travel:0},
     arrivalTimer:0,transitLowTime:0,dangerousSpeedTime:0,coaching:{},completedSubjects:[],sessionCalibration:null,inputConfigurations:[],
     rawInput:{throttle:0,forward:0,strafe:0,yaw:0},command:{throttle:0,forward:0,strafe:0,yaw:0},
-    drone:{x:home.x,z:home.z,y:0,vx:0,vz:0,vy:0,yaw:0,yawRate:0,roll:0,pitch:0,rollRate:0,pitchRate:0,thrustNewtons:0}};
+    environment:createEnvironment(environment),flightController:createFlightController(),altimeter:0,
+    drone:{x:home.x,z:home.z,y:0,vx:0,vz:0,vy:0,yaw:0,yawRate:0,roll:0,pitch:0,rollRate:0,pitchRate:0,thrustNewtons:0,motors:[0,0,0,0]}};
 }
 export function transitionFlightPhase(state,phase) {
   const previous=phaseMission[state.phase],next=phaseMission[phase];
@@ -25,7 +28,8 @@ export function transitionFlightPhase(state,phase) {
     if(state.courseId!==nextCourse) {
       if(state.drone.y>.001)throw new Error('コース変更は接地後に行ってください。');
       state.courseId=nextCourse;
-      Object.assign(state.drone,{x:layouts[nextCourse].takeoff.x,z:layouts[nextCourse].takeoff.z,vx:0,vz:0,vy:0,yaw:0,roll:0,pitch:0,rollRate:0,pitchRate:0,yawRate:0,thrustNewtons:0});
+      Object.assign(state.drone,{x:layouts[nextCourse].takeoff.x,z:layouts[nextCourse].takeoff.z,vx:0,vz:0,vy:0,yaw:0,roll:0,pitch:0,rollRate:0,pitchRate:0,yawRate:0,thrustNewtons:0,motors:[0,0,0,0]});
+      state.flightController=createFlightController();
       state.command={throttle:0,forward:0,strafe:0,yaw:0};state.hasTakenOff=false;state.groundTime=0;
     }
   }
