@@ -1165,6 +1165,10 @@ const initialSubject=new URLSearchParams(location.search).get("subject");
 if(subjects[initialSubject]) {state.subject=initialSubject;document.getElementById("subjectSelect").value=initialSubject;}
 fetch("/api/status").then(response=>response.json()).then(status=>{
   accessGranted=Boolean(status.access);
+  if(status.localDev) {
+    if(!state.developerMode&&!state.running)document.getElementById("developerModeButton").click();
+    if(state.phase==='preflight' && !state.presentation)ui.examiner.textContent="ローカル開発用：ログインなしで全科目を利用できます。キーボード操作はONです。";
+  }
   if(!accessGranted && state.phase==='preflight' && !state.presentation)ui.examiner.textContent="登録不要の無料体験を利用できます。他の科目は検証参加者・契約者向けです。";
 }).catch(()=>{if(state.phase==='preflight' && !state.presentation)ui.examiner.textContent="無料体験を利用できます。全科目の利用には専用サーバーから起動してください。";});
 
