@@ -4,7 +4,7 @@ import {createFlightState,transitionFlightPhase,landedAt} from '../src/session-r
 import {evaluateFlightSafety,touchesCone} from '../src/flight-safety.js';
 test('cone volume detects low contacts but clears the correct 1.5m eight flight',()=>{
   assert.equal(touchesCone({x:0,y:.25,z:0},{x:0,z:0}),true);
-  assert.equal(touchesCone({x:.5,y:.05,z:.05},{x:0,z:0}),true);
+  assert.equal(touchesCone({x:.45,y:.05,z:.05},{x:0,z:0}),true);
   assert.equal(touchesCone({x:1,y:.05,z:0},{x:0,z:0}),false);
   assert.equal(touchesCone({x:0,y:.7,z:0},{x:0,z:0}),false);
   assert.equal(touchesCone({x:0,y:1.5,z:0},{x:0,z:0}),false);

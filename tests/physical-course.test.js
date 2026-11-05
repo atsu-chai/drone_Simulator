@@ -49,6 +49,15 @@ test('neutral sticks cannot bypass takeoff and eventually time out',()=>{
   for(let i=0;i<120*482 && session.state.running;i++)session.step({throttle:0,yaw:0,forward:0,strafe:0});
   assert.equal(session.outcome,'timeout');assert.equal(session.state.squareIndex,0);assert.equal(session.state.touchdowns.length,0);
 });
+test('small drift over H on the abnormal failure line is not an instant failure',()=>{
+  const near=createEvaluation();
+  evaluateSample(near,{phase:'abnormal',index:0,time:0,position:{x:0,y:3.5,z:2.52}});
+  evaluateSample(near,{phase:'abnormal',index:0,time:3,position:{x:.3,y:3.5,z:2.52}});
+  assert.equal(near.fatal,false);assert.equal(near.events.length,0);
+  const away=createEvaluation();
+  evaluateSample(away,{phase:'abnormal',index:0,time:0,position:{x:3,y:3.5,z:2.6}});
+  assert.equal(away.fatal,true);
+});
 test('H arrival exemption does not disable the boundary on the preceding transit',()=>{
   const e=createEvaluation();
   evaluateSample(e,{phase:'emergencyTransit',time:0,anchor:{x:6.5,z:0},position:{x:3,y:3.5,z:2.6}});
@@ -61,4 +70,17 @@ test('H arrival exemption does not disable the boundary on the preceding transit
   assert.equal(arrival.events.at(-1).type,'route-penalty');
   evaluateSample(arrival,{phase:'emergencyArrival',time:4,position:{x:30,y:3.5,z:30}});
   assert.equal(arrival.fatal,true);
+});
+for(const preset of ['light','moderate','limit']) {
+  test(`${preset} wind: every subject stays flyable through production physics`,()=>{
+    for(const subject of ['square','eight','abnormal'])for(const seed of [1,2]) {
+      const run=flyPhysicalCourse(subject,{environment:{preset,seed}});
+      assert.equal(run.outcome,'completed');assert.ok(run.result.progress.every(task=>task.complete));
+      assert.equal(run.final.y,0);
+    }
+  });
+}
+test('the same seed replays the same windy flight; another seed does not',()=>{
+  const fly=seed=>flyPhysicalCourse('abnormal',{environment:{preset:'moderate',seed}});
+  assert.deepEqual(fly(5),fly(5));assert.notDeepEqual(fly(5).samples,fly(6).samples);
 });
