@@ -16,7 +16,7 @@ npm start
 
 Node.jsのバージョン管理にnvmを使っている場合は、clone後に `nvm install` と `nvm use` で `.nvmrc` の24系を選べる。nvmは必須ではない。
 
-ブラウザで `http://localhost:8000/` を開く。無料体験は `/index.html`、教材は `/learn.html`。Three.jsをCDNから読み込むためネットワーク接続が必要。Node.jsのSQLiteに関するExperimentalWarningが出る環境がある。
+ブラウザで `http://localhost:8000/` を開く。練習メニューは `/practice.html`、教材は `/learn.html`。Three.jsをCDNから読み込むためネットワーク接続が必要。Node.jsのSQLiteに関するExperimentalWarningが出る環境がある。
 
 `npm run setup` は `.env` を作る。既存ファイルは保持する。ポートを変更する場合は `.env` の `PORT` と `APP_ORIGIN` を揃える。外部から設定した環境変数は `.env` より優先される。変更後はサーバーを再起動する。
 

@@ -112,7 +112,7 @@ export function createApp({dbPath=resolve(root,'.data/service.sqlite'),origin='h
       if(!['GET','HEAD'].includes(req.method)) return json(res,405,{error:'許可されていません。'});
       const publicPath=path==='/'?'/home.html':decodeURIComponent(path);
       if(['/src/premium-mission.js','/src/exam-flow.js','/src/exam-content.js','/src/exam-scoring.js','/src/exam-practical.js','/src/exam-ui.js'].includes(publicPath) && !hasAccess(accountFor(req)) && !devAccess(req)) return json(res,403,{error:'検証参加または有効な契約が必要です。'});
-      if(!/^\/(?:home\.html|index\.html|learn\.html|account\.html|legal\.html|contact\.html|app\.js|site\.js|styles\.css|site\.css|src\/[a-z-]+\.js|assets\/[a-zA-Z0-9_./-]+)$/.test(publicPath)||publicPath.includes('..')) return json(res,404,{error:'見つかりません。'});
+      if(!/^\/(?:home\.html|index\.html|practice\.html|practice\.js|learn\.html|account\.html|legal\.html|contact\.html|app\.js|site\.js|styles\.css|site\.css|src\/[a-z-]+\.js|assets\/[a-zA-Z0-9_./-]+)$/.test(publicPath)||publicPath.includes('..')) return json(res,404,{error:'見つかりません。'});
       const file=resolve(root,`.${publicPath}`);if(!statSync(file).isFile()) return json(res,404,{error:'見つかりません。'});
       res.writeHead(200,{'Content-Type':({'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.jpg':'image/jpeg','.glb':'model/gltf-binary','.hdr':'application/octet-stream'})[extname(file)]||'application/octet-stream','Cache-Control':'no-cache'});res.end(req.method==='HEAD'?undefined:readFileSync(file));
     } catch(error) {json(res,error.status||500,{error:error.status?error.message:'処理できませんでした。時間をおいて再試行してください。'});}
@@ -122,5 +122,5 @@ export function createApp({dbPath=resolve(root,'.data/service.sqlite'),origin='h
 if(process.argv[1]===fileURLToPath(import.meta.url)) {
   const origin=process.env.APP_ORIGIN||'http://localhost:8000';
   const {server}=createApp({origin,stripeKey:process.env.STRIPE_SECRET_KEY,webhookSecret:process.env.STRIPE_WEBHOOK_SECRET,salesEnabled:process.env.SALES_ENABLED==='true',localDevAccess:process.argv.includes('--local-dev-access')});
-  server.listen(Number(process.env.PORT||8000),'127.0.0.1',()=>console.log(`Trainer ready: ${origin}${process.argv.includes('--local-dev-access')?'（開発用：ログインなしで全科目を開放）':''}`));
+  server.listen(Number(process.env.PORT||8000),'127.0.0.1',()=>console.log(`Trainer ready: ${origin}${process.argv.includes('--local-dev-access')?'/practice.html（開発用：ログインなしで全科目を開放）':''}`));
 }

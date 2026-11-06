@@ -401,19 +401,6 @@ select {
     border-left: 0;
   }
 
-  .top-right {
-    left: 18px;
-    right: auto;
-    top: auto;
-    bottom: 82px;
-  }
-
-  .sim-stage > .telemetry-status {
-    top: 142px;
-    bottom: auto;
-    right: auto;
-    left: 18px;
-  }
 }
 
 @media (orientation: portrait) and (pointer: coarse) {
@@ -440,10 +427,10 @@ select {
 }
 
 /* The scene remains primary; views and course facts sit outside the central flight area. */
-.view-controls {left:18px;top:150px;display:flex;gap:4px;padding:5px;}
+.view-controls {display:flex;gap:4px;padding:5px;}
 .view-controls button {background:transparent;color:var(--muted);border:0;padding:8px 12px;border-radius:4px;cursor:pointer;font:inherit;font-size:12px;}
 .view-controls button.active {background:var(--accent);color:#0b2119;}
-.course-legend {left:18px;bottom:120px;padding:12px;max-width:420px;font-size:12px;line-height:1.7;}
+.course-legend {padding:8px 12px;font-size:12px;line-height:1.6;}
 .course-legend span {margin-right:12px;white-space:nowrap;}
 .course-legend span::before {content:'';display:inline-block;width:10px;height:10px;margin-right:5px;background:#526166;}
 .course-legend .penalty-key::before {background:#ecc544;}.course-legend .failure-key::before {background:#d65262;}
@@ -462,34 +449,16 @@ select {
 .input-progress-label {display:flex;align-items:center;gap:12px;font-size:12px;margin-bottom:8px;white-space:nowrap;}
 .input-progress-label progress {flex:1;width:auto;min-width:0;accent-color:var(--accent);}
 #controllerProgressText,#axisReadout {display:block;margin:8px 0 12px;color:var(--muted);font-size:12px;line-height:1.6;}
-@media(max-width:1150px) {.top-left {width:320px;}.top-right {top:auto;bottom:78px;left:18px;right:auto;font-size:12px;}.telemetry-status {top:18px;font-size:11px;}.course-legend {bottom:142px;}.view-controls {top:156px;}}
 
 .inset-toggle {display:flex;align-items:center;gap:5px;padding:0 8px;font-size:12px;white-space:nowrap;color:var(--text);}
 .inset-toggle input {accent-color:var(--accent);width:15px;height:15px;margin:0;}
-.aircraft-inset {right:18px;top:144px;width:220px;overflow:hidden;background:transparent;backdrop-filter:none;pointer-events:none;}
+.aircraft-inset {width:200px;overflow:hidden;background:transparent;backdrop-filter:none;pointer-events:none;}
 .aircraft-inset[hidden] {display:none;}
 .aircraft-inset strong,.aircraft-inset small {display:block;background:#152126;padding:8px 10px;font-size:11px;line-height:1.4;}
 .aircraft-inset strong {font-size:12px;}.aircraft-inset strong span {float:right;color:var(--accent);}
 #aircraftInsetViewport {height:144px;}
-@media(max-width:1150px) {.aircraft-inset {width:180px;}#aircraftInsetViewport {height:116px;}}
-@media(max-height:620px) {.aircraft-inset {top:144px;width:160px;}#aircraftInsetViewport {height:100px;}}
-
-.aircraft-inset[data-view=top] {top:auto;bottom:120px;}
 
 .sim-stage {container-type:inline-size;container-name:flight;}
-@container flight (max-width:1200px) {
-  .top-left {left:12px;right:180px;top:12px;width:auto;padding:10px;}
-  .top-left strong {font-size:16px;line-height:1.3;}.top-left small {display:none;}
-  .view-controls {left:12px;top:98px;padding:4px;gap:0;}
-  .view-controls button {padding:7px 8px;font-size:11px;}.inset-toggle {font-size:11px;padding:0 6px;}
-  .telemetry-status {left:12px;right:180px;top:144px;gap:6px;flex-wrap:wrap;padding:8px;font-size:10px;}
-  .aircraft-inset,.aircraft-inset[data-view=top] {top:12px;bottom:auto;right:12px;width:144px;}
-  #aircraftInsetViewport {height:96px;}.aircraft-inset strong,.aircraft-inset small {padding:6px;font-size:10px;}
-  .course-legend {left:12px;right:12px;bottom:112px;padding:8px;font-size:10px;line-height:1.4;max-width:none;}
-  .course-legend small,.course-legend strong {margin-top:2px;}
-  .top-right {top:auto;left:12px;right:12px;bottom:66px;justify-content:space-between;padding:8px;font-size:10px;gap:5px;}
-  .bottom-center {left:12px;right:12px;bottom:10px;width:auto;transform:none;padding:9px;font-size:12px;line-height:1.4;}
-}
 @media (max-width:760px) {
   .app-shell {display:block;height:auto;min-height:100vh;overflow:visible;}
   .sim-stage {height:max(560px,58vh);}
@@ -514,9 +483,6 @@ select {
 .exam-center .sim-stage {height:100%;min-height:0;width:100%;position:absolute;inset:0}
 .exam-center .sim-stage .hud {display:none!important}
 .exam-flight-only .exam-center .sim-stage .top-right,.exam-flight-only .exam-center .sim-stage .telemetry-status {display:flex!important}
-.exam-flight-only .exam-center .sim-stage .top-right,.exam-flight-only .exam-center .sim-stage .telemetry-status {position:absolute;left:12px;right:auto;bottom:auto;width:auto;max-width:calc(100% - 24px);transform:none;flex-wrap:wrap;justify-content:flex-start;gap:6px 12px;padding:6px 10px;box-sizing:border-box;font-size:12px}
-.exam-flight-only .exam-center .sim-stage .top-right {top:12px}
-.exam-flight-only .exam-center .sim-stage .telemetry-status {top:50px}
 .exam-paper {color-scheme:light;height:100%;overflow:auto;background:#52645a;padding:24px;box-sizing:border-box}
 .exam-paper form {max-width:1000px;margin:auto;background:#f5f0df;color:#27332f;padding:28px 34px;border-top:14px solid #747b78;box-shadow:0 8px 24px #0005;border-radius:10px;line-height:1.6}
 .exam-paper form>label {display:block;margin:14px 0}
@@ -540,3 +506,54 @@ select {
 .exam-calls {display:flex;gap:12px;align-items:end}.exam-calls label {flex:1;display:grid;gap:4px}.exam-calls select {width:100%}.exam-score {font-size:32px;font-weight:700}
 .exam-console [hidden] {display:none!important}
 @media(max-width:800px) {.exam-console header {gap:8px;padding:8px}.exam-progress {max-height:56px}.exam-console header>div {max-width:150px}.exam-console header>button {max-width:90px;font-size:11px}.exam-paper {padding:10px}.exam-paper form {padding:20px 16px}.exam-fields {grid-template-columns:1fr}.exam-calls {align-items:stretch;flex-direction:column}.exam-console footer {padding:8px 12px}.exam-line {font-size:15px}.exam-console table {font-size:12px}.exam-console th,.exam-console td {padding:5px}}
+
+/* Flight page layout: HUD corners stay clear of the course, the panel keeps Start in view. */
+.hud-column {position:absolute;display:flex;flex-direction:column;gap:8px;pointer-events:none;z-index:1}
+.hud-column>.hud {position:static;pointer-events:auto}
+.hud-left {left:12px;top:12px;align-items:flex-start;max-width:calc(58% - 18px)}
+.hud-right {right:12px;top:12px;align-items:flex-end;max-width:calc(42% - 18px)}
+.hud-bottom {left:12px;right:12px;bottom:12px;align-items:center}
+.top-left {width:auto;max-width:100%;padding:10px 12px;gap:3px}
+.top-left strong {font-size:17px;line-height:1.35}
+.top-left small {font-size:12px}
+.top-right {flex-wrap:wrap;justify-content:flex-end;gap:4px 12px;padding:8px 12px;font-size:12px}
+.telemetry-status {flex-wrap:wrap;gap:4px 12px;padding:6px 10px;font-size:11px}
+.bottom-center {width:min(720px,100%);transform:none;padding:10px 14px;font-size:14px;line-height:1.5}
+.course-legend {display:flex;flex-wrap:wrap;align-items:center;gap:2px 12px;max-width:min(900px,100%)}
+.course-legend span {margin:0}.course-legend small,.course-legend strong {margin:0}
+#aircraftInsetViewport {height:124px}
+.exam-flight-only .exam-center .sim-stage .top-right,.exam-flight-only .exam-center .sim-stage .telemetry-status {display:flex!important}
+.app-shell {grid-template-columns:minmax(0,1fr) 340px}
+.panel-hidden .app-shell {grid-template-columns:minmax(0,1fr)}
+.panel-hidden .control-panel {display:none}
+.control-panel {display:flex;flex-direction:column;padding:0;overflow:hidden}
+.panel-head {flex:none;padding:14px 18px 10px}
+.back-link {font-size:13px;text-decoration:none}
+.panel-head h1 {margin:6px 0 2px;font-size:19px;line-height:1.35}
+.panel-head p {margin:0;color:var(--muted);font-size:12px;line-height:1.55}
+.panel-tabs {flex:none;display:flex;padding:0 12px;gap:2px;border-bottom:1px solid var(--line)}
+.panel-tabs button {flex:1;padding:9px 4px;background:none;border:0;border-bottom:3px solid transparent;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
+.panel-tabs [aria-selected=true] {color:var(--text);border-bottom-color:var(--accent);font-weight:700}
+.panel-body {flex:1;min-height:0;overflow:auto;padding:4px 18px 14px}
+.panel-body .panel-section {margin:0;padding:12px 0;border-bottom:1px solid var(--line)}
+.panel-body [role=tabpanel]>.panel-section:last-child {border-bottom:0}
+.panel-body h2 {margin:0 0 8px;font-size:13px}
+.panel-actions {flex:none;display:grid;gap:8px;padding:12px 18px;border-top:1px solid var(--line);background:var(--panel-2)}
+.panel-actions .primary-button,.panel-actions .secondary-button {width:100%;margin:0}
+.panel-actions-row {display:flex;gap:8px}
+.start-hint {padding:0;background:none;border:0;color:var(--accent-2);font:inherit;font-size:12px;line-height:1.5;text-align:left;cursor:pointer}
+.result-panel {position:absolute;z-index:3;top:50%;left:50%;transform:translate(-50%,-50%);width:min(560px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;margin:0;padding:20px 24px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 18px 44px rgba(0,0,0,.45)}
+.result-panel[hidden] {display:none}
+.result-panel h2 {margin:0 0 10px;font-size:18px}
+.result-actions {display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.result-actions>* {width:100%;margin:0;text-align:center;text-decoration:none;box-sizing:border-box;font-size:13px}
+@container flight (max-width:760px) {
+  .hud-left {flex-direction:row;flex-wrap:wrap;gap:6px;max-width:calc(62% - 18px)}
+  .hud-right {max-width:calc(38% - 6px)}
+  .aircraft-inset,.top-left span,.top-left small,.course-legend small,.course-legend span {display:none}
+  .top-left {padding:6px 10px}.top-left strong {font-size:14px}
+  .view-controls {flex-wrap:wrap;padding:3px;gap:0}.view-controls button {padding:5px 7px;font-size:11px}.inset-toggle {font-size:11px;padding:0 5px}
+  .top-right {font-size:11px;padding:6px 8px;gap:2px 8px}
+  .telemetry-status {font-size:10px;padding:4px 8px}
+  .course-legend {padding:4px 10px;font-size:11px}.bottom-center {padding:6px 10px;font-size:12px}
+}

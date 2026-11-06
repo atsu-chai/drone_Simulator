@@ -128,4 +128,5 @@ test('full exam modules require existing all-subject access; dev opening stays l
   normal.db.prepare('UPDATE accounts SET validation_until=0').run();
   for(const path of paths)assert.equal((await get(normal,path,{cookie:'drone_session='+token})).status,403);
   assert.equal((await get(normal,'/index.html')).status,200);
+  assert.equal((await get(normal,'/practice.html')).status,200);assert.equal((await get(normal,'/practice.js')).status,200);
 });

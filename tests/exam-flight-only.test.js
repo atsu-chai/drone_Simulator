@@ -46,3 +46,10 @@ test('the result covers this flight only, without the 70 point comparison, and o
   assert.doesNotMatch(clean,/70点|机上：|飛行記録：/);assert.match(clean,/飛行経路逸脱/);
   assert.doesNotMatch(examPaper({...createExam(),stage:'result'}),/data-retry/);
 });
+test('every subject has what the practice menu needs',()=>{
+  for(const [id,subject] of Object.entries(subjects)) {
+    assert.ok(['exam','flight','guided','free'].includes(subject.group),id);assert.ok(subject.summary,id);
+    assert.equal(Boolean(subject.examStage),subject.group==='flight',id);
+    assert.equal(Boolean(subject.missions),subject.group==='guided',id);
+  }
+});

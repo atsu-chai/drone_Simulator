@@ -70,6 +70,9 @@ const ui = {
   feedback: document.getElementById("feedbackList"),
   downloadLog: document.getElementById("downloadLogButton"),
   modeButtons: [...document.querySelectorAll("[data-mode]")],
+  sessionTitle: document.getElementById("sessionTitle"),
+  sessionSummary: document.getElementById("sessionSummary"),
+  startHint: document.getElementById("startHint"),
 };
 
 const checklistItems = [
@@ -521,8 +524,8 @@ function resizeRenderer() {
   world.compactFrames=null;
   if(width<=1200&&!examSession) {
     const local=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return {top:r.top-rect.top,bottom:r.bottom-rect.top};};
-    const headerBottom=Math.max(...['.top-left','.view-controls','.telemetry-status'].map(selector=>local(selector).bottom),document.getElementById('aircraftInset').hidden?0:local('.aircraft-inset').bottom);
-    const footerTop=Math.min(...['.course-legend','.top-right','.bottom-center'].map(selector=>local(selector).top));
+    const headerBottom=Math.max(local('.hud-left').bottom,local('.hud-right').bottom);
+    const footerTop=local('.hud-bottom').top;
     const area={left:12,right:width-12,top:headerBottom+12,bottom:Math.max(headerBottom+112,footerTop-12)};
     const group=world.fields[state.courseId].group;
     world.compactFrames={overview:fitCourseCamera(world.camera,group,area,width,height,'overview'),top:fitCourseCamera(world.camera,group,area,width,height,'top')};
@@ -704,7 +707,7 @@ function confirmPostflight(index) {
 function setMode(mode) {
   if (state.running) return;
   state.mode = mode;
-  ui.modeBadge.textContent = mode === "practice" ? "練習モード" : "本番モード";
+  ui.modeBadge.textContent = mode === "practice" ? "補助あり" : "補助なし（模擬）";
   ui.modeButtons.forEach((button) => {
     button.classList.toggle("active", button.dataset.mode === mode);
   });
@@ -747,11 +750,12 @@ function reset(nextSubject) {
   ui.downloadLog.disabled = true;
   ui.start.disabled = true;
   ui.start.textContent = "試験を開始";
-  ui.modeBadge.textContent=state.mode==="practice"?"練習モード":"模擬試験";
+  ui.modeBadge.textContent=state.mode==="practice"?"補助あり":"補助なし（模擬）";
   buildChecklist();
   setPhase("preflight");
   const examSubject=isExamSubject(selectedSubject);
   document.getElementById('checklistPanel').hidden=examSubject;
+  renderSession(selectedSubject,examSubject);
   if(examSubject){ui.start.disabled=false;ui.start.textContent=selectedSubject==='exam'?'本番形式の受付へ':'飛行を開始';}
   if(subjects[selectedSubject]?.examStage)ui.examiner.textContent='受付と口述を省き、本番と同じ画面と採点でこの飛行だけを行います。';
 }
@@ -982,6 +986,7 @@ function loop() {
   updateThreeWorld(frameDt);
   updateMotorSound();
   renderReadouts();
+  renderStartHint();
   requestAnimationFrame(loop);
 }
 
@@ -1092,6 +1097,8 @@ function getParticipantId() {
 }
 function trainingNow() { return state.simulationTime * 1000; }
 let accessGranted = false;
+let accessChecked=false;
+const settingsKey='drone.settings.v1',settingFields=[['windSelect','value'],['motorSoundEnabled','checked'],['visualOnly','checked'],['voiceEnabled','checked']];
 let premiumMission = null;
 let examSession = null, examScreen = null, examModules = null, examFlightStage = null, examPauseReason = '', examSaved = false, examReturnMode = 'practice';
 const savedHistory = historyStore({getItem:key=>window.localStorage.getItem(key),setItem:(key,value)=>window.localStorage.setItem(key,value),removeItem:key=>window.localStorage.removeItem(key)});
@@ -1154,7 +1161,6 @@ document.getElementById('recheckButton').addEventListener('click',()=>{
   if(state.running&&!state.paused)return;
   controllerInput.begin({full:true});pollController(0);
 });
-document.getElementById("subjectSelect").addEventListener("change",(event)=>{reset(event.target.value);});
 document.getElementById("windSelect").addEventListener("change",()=>{if(!state.running)reset();else document.getElementById("windSelect").value=state.environment.preset;});
 document.getElementById("visualOnly").addEventListener("change",event=>{document.querySelector(".top-right").classList.toggle("visual-only",event.target.checked);});
 document.getElementById("pauseButton").addEventListener("click",()=>{
@@ -1166,7 +1172,7 @@ document.getElementById("pauseButton").addEventListener("click",()=>{
   state.paused=false;state.physicsAccumulator=0;document.getElementById("pauseButton").textContent="一時停止";ui.examiner.textContent=phases[state.phase].line;
 });
 document.getElementById("focusRetryButton").addEventListener("click",()=>{
-  reset(document.getElementById("focusRetryButton").dataset.subject);setMode('practice');document.getElementById("subjectSelect").value=state.subject;
+  reset(document.getElementById("focusRetryButton").dataset.subject);setMode('practice');
   ui.examiner.textContent=`${subjects[state.subject].label}を重点練習します。飛行前点検から始めてください。`;
   document.getElementById('checklistPanel').scrollIntoView({block:'start',behavior:'smooth'});
 });
@@ -1181,11 +1187,11 @@ setInterval(async()=>{
   catch {pauseTraining("利用状況を確認できません。一度終了して再接続してください。");}
 },30000);
 renderHistory();
-state.subject=document.getElementById("subjectSelect").value;
-const initialSubject=new URLSearchParams(location.search).get("subject");
-if(subjects[initialSubject]) {state.subject=initialSubject;document.getElementById("subjectSelect").value=initialSubject;}
+const pageOptions=new URLSearchParams(location.search),initialSubject=pageOptions.get("subject");
+state.subject=subjects[initialSubject]?initialSubject:"demo";
+restoreSettings();
 fetch("/api/status").then(response=>response.json()).then(status=>{
-  accessGranted=Boolean(status.access);
+  accessGranted=Boolean(status.access);accessChecked=true;
   if(status.localDev) {
     if(!state.developerMode&&!state.running)document.getElementById("developerModeButton").click();
     if(state.phase==='preflight' && !state.presentation)ui.examiner.textContent="ローカル開発用：ログインなしで全科目を利用できます。キーボード操作はONです。";
@@ -1196,10 +1202,64 @@ fetch("/api/status").then(response=>response.json()).then(status=>{
 initThreeWorld();
 reset();
 setMode("practice");
+if(["device","record"].includes(pageOptions.get("tab")))openPanelTab(pageOptions.get("tab"));
+if(pageOptions.get("watch")==="1")document.getElementById("watchButton").click();
 requestAnimationFrame(loop);
 
 
 function isExamSubject(subject) {return subject==='exam'||Boolean(subjects[subject]?.examStage);}
+function renderSession(subject,examSubject) {
+  const info=subjects[subject];
+  ui.sessionTitle.textContent=info.label;ui.sessionSummary.textContent=info.summary;document.title=`${info.label} | 実地試験トレーナー`;
+  document.getElementById('missionSection').hidden=!info.missions;
+  document.getElementById('modeRow').hidden=!info.missions;
+  document.getElementById('demoSection').hidden=subject==='exam';
+  const shown=['preflight',...(info.missions||[]),'postflight','result'];
+  ui.missions.forEach(item=>{item.hidden=!shown.includes(item.dataset.mission);});
+  try {const url=new URL(location.href);url.searchParams.set('subject',subject);url.searchParams.delete('watch');history.replaceState(null,'',url);}catch{}
+}
+function startHintFor() {
+  if(state.running||state.presentation||state.phase!=='preflight')return null;
+  if(state.subject!=='demo'&&!accessGranted&&accessChecked)return {text:'この科目には利用権が必要です。アカウントを確認',tab:null};
+  if(!isExamSubject(state.subject)&&state.checklistIndex<checklistItems.length)return {text:'上の飛行前点検を順に確認すると開始できます',tab:'flight'};
+  if(!state.inputReady)return {text:'操作機器の確認が必要です（操作機器タブへ）',tab:'device'};
+  return null;
+}
+function renderStartHint() {
+  const hint=startHintFor(),text=hint?.text||'';
+  if(ui.startHint.textContent!==text)ui.startHint.textContent=text;
+  ui.startHint.hidden=!hint;ui.startHint.dataset.tab=hint?.tab||'';
+}
+function openPanelTab(id) {
+  for(const tab of document.querySelectorAll('[data-tab]')) {
+    const active=tab.dataset.tab===id;
+    tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;
+    document.getElementById(`pane-${tab.dataset.tab}`).hidden=!active;
+  }
+  document.querySelector('.panel-body').scrollTop=0;
+}
+document.querySelector('.panel-tabs').addEventListener('click',event=>{const tab=event.target.closest('[data-tab]');if(tab)openPanelTab(tab.dataset.tab);});
+document.querySelector('.panel-tabs').addEventListener('keydown',event=>{
+  if(!['ArrowLeft','ArrowRight'].includes(event.key))return;
+  const tabs=[...document.querySelectorAll('[data-tab]')],index=tabs.indexOf(document.activeElement);
+  const next=tabs[(index+(event.key==='ArrowRight'?1:tabs.length-1))%tabs.length];openPanelTab(next.dataset.tab);next.focus();
+});
+ui.startHint.addEventListener('click',()=>{if(ui.startHint.dataset.tab)openPanelTab(ui.startHint.dataset.tab);else location.href='account.html';});
+document.getElementById('panelToggle').addEventListener('click',event=>{
+  const hidden=document.body.classList.toggle('panel-hidden');
+  event.currentTarget.textContent=hidden?'パネルを表示':'パネルを隠す';event.currentTarget.setAttribute('aria-expanded',String(!hidden));
+});
+// Per-browser conveniences only; the page works the same when storage is blocked.
+function restoreSettings() {
+  try {
+    const saved=JSON.parse(localStorage.getItem(settingsKey)||'{}');
+    for(const [id,property] of settingFields)if(saved[id]!==undefined)document.getElementById(id)[property]=saved[id];
+  }catch{}
+  document.querySelector('.top-right').classList.toggle('visual-only',document.getElementById('visualOnly').checked);
+}
+for(const [id] of settingFields)document.getElementById(id).addEventListener('change',()=>{
+  try {localStorage.setItem(settingsKey,JSON.stringify(Object.fromEntries(settingFields.map(([field,property])=>[field,document.getElementById(field)[property]]))));}catch{}
+});
 async function startFullExam() {
   ui.start.disabled=true;
   try {
@@ -1216,7 +1276,7 @@ async function startFullExam() {
     examReturnMode=state.mode;state.mode='exam';state.cameraMode='pilot';world.snapCamera=true;state.running=false;state.paused=false;state.keys.clear();
     examSaved=false;examPauseReason='';
     const leave=()=>{reset(state.subject);resizeRenderer();};
-    examScreen=screen.createExamUI({stageElement:document.querySelector('.sim-stage'),send:sendExam,resume:resumeFullExam,exit:leave,title:subjects[state.subject].label,retry:flightOnly?()=>{leave();startFullExam();}:null});
+    examScreen=screen.createExamUI({stageElement:document.querySelector('.sim-stage'),send:sendExam,resume:resumeFullExam,exit:()=>location.assign('practice.html'),title:subjects[state.subject].label,retry:flightOnly?()=>{leave();startFullExam();}:null});
     syncExamFlight();examScreen.render(examSession,state.environment);resizeRenderer();
   } catch(error) {ui.examiner.textContent='本番形式の準備に失敗しました。利用権と読込を確認してください。';console.error(error);}
   finally {ui.start.disabled=false;}

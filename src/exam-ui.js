@@ -28,7 +28,7 @@ const clock=seconds=>`${Math.floor(seconds/60)}分${String(Math.floor(seconds%60
 function resultSummary(s,r) {
   if(!s.flightOnly)return {title:'模擬採点（公式の合否ではない）',score:r.fatal?'試験中止':`残り ${r.remaining} / 100点`,note:r.fatal?'中止に該当する事象がありました。':`参考の70点と比較：${r.meetsReference?'基準点以上':'基準点未満'}`,actions:''};
   const stage=examStages.find(stage=>stage.id===s.flightOnly);
-  return {title:`${stage.title}の飛行のみ／模擬採点（公式の合否ではない）`,score:r.fatal?'試験中止':`減点 ${r.deduction}点`,note:`${r.fatal?'中止に該当する事象がありました。':'この飛行の減点のみです。机上、口述、記録は含みません。'}／経過 ${clock(s.elapsed)}（制限 ${clock(stage.limit)}）`,actions:'<div class="exam-result-actions"><button type="button" data-retry>もう一度飛ぶ</button><button type="button" data-exit>科目選択へ戻る</button></div>'};
+  return {title:`${stage.title}の飛行のみ／模擬採点（公式の合否ではない）`,score:r.fatal?'試験中止':`減点 ${r.deduction}点`,note:`${r.fatal?'中止に該当する事象がありました。':'この飛行の減点のみです。机上、口述、記録は含みません。'}／経過 ${clock(s.elapsed)}（制限 ${clock(stage.limit)}）`,actions:'<div class="exam-result-actions"><button type="button" data-retry>もう一度飛ぶ</button><button type="button" data-exit>練習メニューへ戻る</button></div>'};
 }
 export function examPaper(s) {
   switch(s.stage) {
@@ -48,7 +48,7 @@ export function examPaper(s) {
 export function createExamUI({stageElement,send,exit,resume=()=>{},title='本番形式（通し）',retry=null}) {
   const originalParent=stageElement.parentNode,originalNext=stageElement.nextSibling;
   const root=document.createElement('section');root.className=retry?'exam-console exam-flight-only':'exam-console';root.setAttribute('aria-label','本番形式コンソール');
-  root.innerHTML=`<header><div><strong>${escape(title)}</strong><p>進め方は受験機関の案内を優先</p></div><ol class="exam-progress"></ol>${retry?'<button type="button" data-retry>最初からやり直す</button>':''}<button type="button" data-exit>終了して科目選択へ</button></header>`+'<div class="exam-center"><div class="exam-paper"><form novalidate></form></div></div><footer><div class="exam-context"></div><p class="exam-line" aria-live="polite"></p><p class="exam-warning" role="status"></p><div class="exam-calls"><label>呼称を選択（数字キー1〜5でも呼称できます）<select aria-label="受験者の呼称"><option value="">選択してください</option>'+calls.map((c,i)=>`<option value="${c.id}">${i+1}：${escape(c.text)}</option>`).join('')+'</select></label><button type="button" data-call>選択した呼称を伝える（Space）</button></div><span class="exam-time"></span></footer>';
+  root.innerHTML=`<header><div><strong>${escape(title)}</strong><p>進め方は受験機関の案内を優先</p></div><ol class="exam-progress"></ol>${retry?'<button type="button" data-retry>最初からやり直す</button>':''}<button type="button" data-exit>終了して練習メニューへ</button></header>`+'<div class="exam-center"><div class="exam-paper"><form novalidate></form></div></div><footer><div class="exam-context"></div><p class="exam-line" aria-live="polite"></p><p class="exam-warning" role="status"></p><div class="exam-calls"><label>呼称を選択（数字キー1〜5でも呼称できます）<select aria-label="受験者の呼称"><option value="">選択してください</option>'+calls.map((c,i)=>`<option value="${c.id}">${i+1}：${escape(c.text)}</option>`).join('')+'</select></label><button type="button" data-call>選択した呼称を伝える（Space）</button></div><span class="exam-time"></span></footer>';
   document.body.append(root);root.querySelector('.exam-center').prepend(stageElement);document.body.classList.add('exam-active');
   let current=null,signature='';const form=root.querySelector('form');
   const resumeButton=document.createElement('button');resumeButton.type='button';resumeButton.dataset.resume='';resumeButton.textContent='再開する';resumeButton.hidden=true;
