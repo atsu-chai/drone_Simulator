@@ -1,4 +1,4 @@
-export const versions = Object.freeze({ app: '0.6.6', course: 'mlit-basic-4', scoring: 'training-5', physics: '20261022', curriculum: 'basic-1' });
+export const versions = Object.freeze({ app: '0.7.0', course: 'mlit-basic-4', scoring: 'training-6', physics: '20261105', curriculum: 'basic-1' });
 export { squarePath } from './course-layout.js';
 import { squarePath, eightCenters, layouts, abnormalTargets, courseIdFor, fieldZone } from './course-layout.js';
 export const course = Object.freeze({ penalty: 1.5, failure: 2.5, grace: 2, squarePath, eightCenters, eightRadius: 2.5 });
@@ -38,10 +38,12 @@ export function evaluateSample(evaluation, sample) {
   };
   const transit=['square','eight','abnormal','emergencyHover','emergencyTransit'].includes(phase);
   const arrival=phase==='emergencyArrival';
-  const zone=arrival && deviation<1 ? 'safe' : transit || arrival ? fieldZone(position,courseIdFor(phase)) : 'safe';
+  // H sits on the abnormal course's failure line, so the H-to-A leg is judged by the leg itself.
+  const leavingH=phase==='abnormal' && index===0;
+  const zone=(arrival || leavingH) && deviation<1 ? 'safe' : transit || arrival ? fieldZone(position,courseIdFor(phase)) : 'safe';
   if(zone==='failure') { evaluation.fatal=true; emit('failure-zone'); return emitted; }
   const outsideArrival=phase==='emergencyArrival' && deviation>=1;
-  if(outsideArrival || (phase!=='emergencyTransit' && !(phase==='square' && index===0) && (zone==='penalty' || deviation>=course.penalty))) {
+  if(outsideArrival || (phase!=='emergencyTransit' && !(phase==='square' && index===0) && !(leavingH && deviation<1) && (zone==='penalty' || deviation>=course.penalty))) {
     if(s.inside) {s.inside=false;s.entries++;s.since=time;s.penalized=false;emit('route-warning');}
     if(!s.penalized && (s.entries>1 || time-s.since>=course.grace)) {emit('route-penalty',5);s.penalized=true;}
   } else if(!s.inside) {emit('route-return');s.inside=true;}

@@ -495,3 +495,6 @@ select {
   .sim-stage {height:max(560px,58vh);}
   .control-panel {height:42vh;min-height:240px;}
 }
+
+.check-label {display:flex;align-items:center;gap:8px;margin:8px 0;font-size:14px;}
+.top-right.visual-only span:nth-child(-n+2) strong {visibility:hidden;}

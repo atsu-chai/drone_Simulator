@@ -17,6 +17,33 @@ test('access ends exactly at paid period; validation is independent',()=>{
   const params=checkoutParams({id:'a',customer:'cus'},'https://test.example');
   assert.equal(params.get('line_items[0][price_data][unit_amount]'),'3000');assert.equal(params.get('line_items[1][price_data][unit_amount]'),'7000');assert.equal(params.get('mode'),'subscription');
 });
+test('local dev access opens subjects only on an explicit, local, non-commercial start',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'drone-dev-'));
+  t.after(()=>rmSync(directory,{recursive:true,force:true}));
+  const start=async(name,options)=>{
+    const app=createApp({dbPath:join(directory,`${name}.sqlite`),origin:'http://localhost:8000',...options});
+    await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));
+    t.after(()=>{app.server.close();app.db.close();});
+    return `http://127.0.0.1:${app.server.address().port}`;
+  };
+  const normal=await start('normal',{});
+  const closed=await (await fetch(normal+'/api/status')).json();
+  assert.equal(closed.access,false);assert.equal(closed.localDev,false);
+  assert.equal((await fetch(normal+'/src/premium-mission.js')).status,403);
+  const dev=await start('dev',{localDevAccess:true});
+  const open=await (await fetch(dev+'/api/status')).json();
+  assert.equal(open.access,true);assert.equal(open.localDev,true);assert.equal(open.authenticated,false);
+  assert.equal((await fetch(dev+'/src/premium-mission.js')).status,200);
+  for(const path of ['/.env','/.data/service.sqlite','/server/main.js'])assert.equal((await fetch(dev+path)).status,404);
+  const {request}=await import('node:http');
+  const viaProxy=await new Promise((resolve,reject)=>{
+    const {hostname,port}=new URL(dev);
+    request({hostname,port,path:'/api/status',headers:{Host:'trainer.example.com'}},response=>{let body='';response.on('data',chunk=>body+=chunk);response.on('end',()=>resolve(JSON.parse(body)));}).on('error',reject).end();
+  });
+  assert.equal(viaProxy.access,false);assert.equal(viaProxy.localDev,false);
+  for(const unsafe of [{origin:'https://trainer.example.com'},{salesEnabled:true},{stripeKey:'test-key'},{webhookSecret:'test-secret'}])
+    assert.throws(()=>createApp({dbPath:join(directory,'refused.sqlite'),origin:'http://localhost:8000',localDevAccess:true,...unsafe}),/開発用の全科目開放/);
+});
 test('signup, login, grants, CSRF, stopped sales, persistence and private files',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'drone-test-'));
   const app=createApp({dbPath:join(directory,'db.sqlite'),origin:'http://localhost:8000'});
