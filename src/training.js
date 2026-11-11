@@ -1,4 +1,4 @@
-export const versions = Object.freeze({ app: '0.7.0', course: 'mlit-basic-4', scoring: 'training-6', physics: '20261105', curriculum: 'basic-1' });
+export const versions = Object.freeze({ app: '0.9.0', course: 'mlit-basic-4', scoring: 'training-6', physics: '20261105', curriculum: 'basic-1' });
 export { squarePath } from './course-layout.js';
 import { squarePath, eightCenters, layouts, abnormalTargets, courseIdFor, fieldZone } from './course-layout.js';
 export const course = Object.freeze({ penalty: 1.5, failure: 2.5, grace: 2, squarePath, eightCenters, eightRadius: 2.5 });
@@ -55,11 +55,16 @@ export function summarizeEvents(events) {
 export {normalizedAxis} from './controller-input.js';
 export function calibrationValid(axes) { return axes.length>=4 && axes.slice(0,4).every(v=>Number.isFinite(v)&&Math.abs(v)<=.2); }
 export const subjects = {
-  demo:{label:'無料体験：離陸・ホバリング・着陸',phase:'takeoff'},
-  square:{label:'スクエア飛行',phase:'takeoff'},
-  eight:{label:'8の字飛行',phase:'eightTakeoff'},
-  abnormal:{label:'異常事態・緊急着陸',phase:'abnormalTakeoff'},
-  full:{label:'通し練習',phase:'takeoff'},
+  exam:{label:'本番形式（通し）',phase:'preflight',group:'exam',summary:'受付、机上、口述、飛行点検、実技3科目、記録、事故報告まで通します。'},
+  'exam-flightcheck':{label:'飛行のみ：飛行点検',phase:'preflight',examStage:'flightcheck',demoSubject:'full',group:'flight',summary:'呼称、離陸、各舵の確認、着陸。',limit:'制限12分'},
+  'exam-square':{label:'飛行のみ：スクエア',phase:'preflight',examStage:'square',demoSubject:'square',group:'flight',summary:'位置安定ON、高度3.5m。AからEを回ります。',limit:'制限8分'},
+  'exam-eight':{label:'飛行のみ：8の字',phase:'preflight',examStage:'eight',demoSubject:'eight',group:'flight',summary:'位置安定ON、高度1.5m。連続2周します。',limit:'制限8分'},
+  'exam-abnormal':{label:'飛行のみ：異常事態',phase:'preflight',examStage:'abnormal',demoSubject:'abnormal',group:'flight',summary:'水平の位置安定OFF。緊急着陸まで行います。',limit:'制限6分'},
+  demo:{label:'無料体験：離陸・ホバリング・着陸',phase:'takeoff',group:'free',summary:'操作を確かめながら、基本の離着陸を試します。'},
+  square:{label:'スクエア飛行',phase:'takeoff',group:'guided',summary:'点検から飛行後の記録まで、補助つきで練習します。',missions:['square']},
+  eight:{label:'8の字飛行',phase:'eightTakeoff',group:'guided',summary:'機首の向きと連続旋回を、補助つきで練習します。',missions:['eight']},
+  abnormal:{label:'異常事態・緊急着陸',phase:'abnormalTakeoff',group:'guided',summary:'位置安定OFFの修正操作と緊急着陸を、補助つきで練習します。',missions:['abnormal']},
+  full:{label:'通し練習',phase:'takeoff',group:'guided',summary:'実技3科目を続けて、補助つきで練習します。',missions:['square','eight','abnormal']},
 };
 export function historyStore(storage) {
   const key='drone.history.v2';

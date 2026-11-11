@@ -71,3 +71,39 @@ export function createCourseScene(id,addCone) {
   group.add(person(-.65,layout.pilot.z,0xd75b5a,'試験員'),person(.65,layout.pilot.z,0x42c4d8,'受験者'));
   return {group,guides,annotations,markerLabels,layout};
 }
+
+// Physical markers for the full exam. The lesson overlay remains available independently.
+export function addExamField(field) {
+  const {group,layout}=field,exam=new THREE.Group();exam.name='exam-field';
+  const outline=(w,h,c=layout.centerZ)=>exam.add(line([{x:-w/2,z:c-h/2},{x:w/2,z:c-h/2},{x:w/2,z:c+h/2},{x:-w/2,z:c+h/2},{x:-w/2,z:c-h/2}],0xf8f4e6));
+  outline(layout.failureWidth,layout.failureDepth);outline(layout.penaltyWidth,layout.penaltyDepth);
+  if(layout.id==='square') {outline(13,5);outline(10,2);}
+  if(layout.id==='eight')for(const c of eightCenters)exam.add(line(Array.from({length:65},(_,i)=>({x:c.x+Math.cos(i/64*Math.PI*2),z:c.z+Math.sin(i/64*Math.PI*2)})),0xf8f4e6));
+  const pad=new THREE.Mesh(new THREE.CircleGeometry(1,64),new THREE.MeshStandardMaterial({color:0xb32b28,roughness:.9}));pad.rotation.x=-Math.PI/2;pad.position.set(layout.takeoff.x,.06,layout.takeoff.z);exam.add(pad);
+  // Painted on the pad, so it stays flat and foreshortens from the pilot's position.
+  for(const [x,z,width,depth] of [[-.32,0,.16,1],[.32,0,.16,1],[0,0,.5,.16]]) {
+    const stroke=new THREE.Mesh(new THREE.PlaneGeometry(width,depth),new THREE.MeshStandardMaterial({color:0xf5f1e6,roughness:.9}));
+    stroke.rotation.x=-Math.PI/2;stroke.position.set(layout.takeoff.x+x,.07,layout.takeoff.z+z);exam.add(stroke);
+  }
+  for(const side of [-1,1])for(let i=0;i<5;i++) {
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(.015,.015,.6,6),new THREE.MeshStandardMaterial({color:0xddddcf}));pole.position.set(side*layout.failureWidth/2,.3,layout.centerZ-layout.failureDepth/2+i*layout.failureDepth/4);exam.add(pole);
+    const flag=new THREE.Mesh(new THREE.PlaneGeometry(.28,.18),new THREE.MeshStandardMaterial({color:0x186fc3,side:THREE.DoubleSide}));flag.position.copy(pole.position).add(new THREE.Vector3(.14,.18,0));exam.add(flag);
+  }
+  // Fold-out table, helmet, glasses and intervention transmitter next to the pilot.
+  const table=new THREE.Mesh(new THREE.BoxGeometry(1.6,.08,.7),new THREE.MeshStandardMaterial({color:0xc2c4b9}));table.position.set(-.7,.78,layout.pilot.z+.7);exam.add(table);
+  for(const x of [-1.3,-.1])for(const z of [.45,.95]) {const leg=new THREE.Mesh(new THREE.CylinderGeometry(.025,.025,.78,8),new THREE.MeshStandardMaterial({color:0x7a8589}));leg.position.set(x,.39,layout.pilot.z+z);leg.rotation.z=x<-.5?.2:-.2;exam.add(leg);}
+  for(const x of [-.65,.65]) {
+    const helmet=new THREE.Mesh(new THREE.SphereGeometry(.18,16,12,0,Math.PI*2,0,Math.PI/2),new THREE.MeshStandardMaterial({color:0xf5e6a9}));helmet.position.set(x,1.65,layout.pilot.z);exam.add(helmet);
+    const glasses=new THREE.Mesh(new THREE.BoxGeometry(.27,.08,.1),new THREE.MeshStandardMaterial({color:0x618e9d,transparent:true,opacity:.7}));glasses.position.set(x,1.63,layout.pilot.z+.13);exam.add(glasses);
+    const controller=new THREE.Mesh(new THREE.BoxGeometry(.24,.11,.18),new THREE.MeshStandardMaterial({color:0x323d42}));controller.position.set(x,1.1,layout.pilot.z+.3);exam.add(controller);
+  }
+  field.lessonSurfaces=group.children.filter(child=>child.isMesh||child.isSprite);
+  group.add(exam);exam.visible=false;field.exam=exam;
+}
+export function setExamField(field,enabled) {
+  field.exam.visible=enabled;
+  if(enabled&&!field.exam.parent)field.group.add(field.exam);
+  else if(!enabled&&field.exam.parent)field.group.remove(field.exam);
+  for(const mesh of field.lessonSurfaces)mesh.visible=!enabled;
+  if(enabled){field.guides.visible=false;field.annotations.visible=false;field.markerLabels.visible=false;}
+}

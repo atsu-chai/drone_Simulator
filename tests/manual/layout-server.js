@@ -12,7 +12,7 @@ createServer((req,res)=>{
   if(path==='/') {res.setHeader('Content-Type','text/html; charset=utf-8');res.end(readFileSync(new URL('./layout-preview.html',import.meta.url)));return;}
   let filePath;
   try {filePath=decodeURIComponent(path.replace(/^\/preview\//,'/'));}catch {res.writeHead(400);res.end();return;}
-  if(!path.startsWith('/preview/') || filePath.includes('..') || filePath==='/src/premium-mission.js' || !/^\/(?:index\.html|app\.js|styles\.css|site\.css|src\/[a-z-]+\.js|assets\/[a-zA-Z0-9_./-]+)$/.test(filePath)) {res.writeHead(404);res.end();return;}
+  if(!path.startsWith('/preview/') || filePath.includes('..') || (filePath==='/src/premium-mission.js'||filePath.startsWith('/src/exam-')) || !/^\/(?:index\.html|app\.js|styles\.css|site\.css|src\/[a-z-]+\.js|assets\/[a-zA-Z0-9_./-]+)$/.test(filePath)) {res.writeHead(404);res.end();return;}
   try {
     const data=readFileSync(resolve(root,`.${filePath}`));
     res.setHeader('Content-Type',({'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.jpg':'image/jpeg','.png':'image/png','.glb':'model/gltf-binary','.hdr':'application/octet-stream'})[extname(filePath)]||'application/octet-stream');res.end(data);
